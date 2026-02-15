@@ -2,8 +2,6 @@ if [[ -e ~/dev ]]; then
     alias cdd="cd ~/dev"
 fi
 
-command -v paru &> /dev/null && alias yay=paru
-
 alias nv=nvim
 alias vim=nvim
 alias vi=nvim

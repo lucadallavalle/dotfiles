@@ -1,5 +1,5 @@
 local M = {
-  "ggandor/leap.nvim",
+  "https://codeberg.org/andyg/leap.nvim",
   version = "*",
   opts = {},
   config = function()

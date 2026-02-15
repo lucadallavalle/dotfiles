@@ -1,7 +1,7 @@
 [user]
 	name = Luca Dalla Valle
 	email = luca.dallavalle@outlook.com
-	signingkey = 934DC39A54448A34
+	signingkey = CCA1B5E70D72E711
 [init]
 	defaultBranch = main
 [rebase]

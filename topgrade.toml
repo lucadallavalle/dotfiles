@@ -3,5 +3,5 @@ disable = ["pip3", "vscode", "emacs"]
 no_self_update = true
 
 [linux]
-arch_package_manager = "paru"
+arch_package_manager = "yay"
 
