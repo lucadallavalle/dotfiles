@@ -24,7 +24,6 @@
     ~/.config/plasma-workspace: plasma-workspace
 
     ~/.config/topgrade.toml: topgrade.toml
-    ~/.config/pypoetry/config.toml: poetry-config.toml
     ~/.nvm-init: nvm-init
     ~/.ng: ng
     ~/.fzf: fzf
