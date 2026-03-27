@@ -1,7 +1,7 @@
 [user]
 	name = Luca Dalla Valle
 	email = luca.dallavalle@outlook.com
-	signingkey = CCA1B5E70D72E711
+	signingkey = /home/ldv/.ssh/id_github.pub
 [init]
 	defaultBranch = main
 [rebase]
@@ -9,4 +9,6 @@
 [commit]
 	gpgsign = true
 [gpg]
-	program = gpg2
+	format = ssh
+[tag]
+	gpgsign = true

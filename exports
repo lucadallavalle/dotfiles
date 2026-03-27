@@ -1,6 +1,9 @@
 # needed to fix GPG commit signing
 export GPG_TTY=$(tty)
 
+# Disable KDE ksshaskpass in terminal sessions (breaks inside tmux)
+unset SSH_ASKPASS SSH_ASKPASS_REQUIRE
+
 export EDITOR=/bin/nvim
 export VISUAL=/bin/nvim
 
