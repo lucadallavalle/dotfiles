@@ -14,4 +14,3 @@ if command -v fzf &> /dev/null; then
     command -v nvim &> /dev/null && alias fzn="nvim \$(fzp)"
     command -v emacsclient &> /dev/null && alias fze="emacsclient -q -n \$(fzp)"
 fi
-

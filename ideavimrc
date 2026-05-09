@@ -22,4 +22,3 @@ let g:WhichKey_ShowVimActions = "true"
 "" ========================================================
 
 set ideajoin
-

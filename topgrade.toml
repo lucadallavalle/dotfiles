@@ -4,4 +4,3 @@ no_self_update = true
 
 [linux]
 arch_package_manager = "yay"
-
