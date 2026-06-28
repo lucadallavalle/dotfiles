@@ -91,11 +91,19 @@
   (setq org-todo-repeat-to-state 'REPEAT)
   (setq calendar-week-start-day 1))
   (setq doom-modeline-enable-word-count 't)
+
   (setq org-agenda-custom-commands
-       '(("n" "What's Next?"
-         ((agenda "" ((org-agenda-span 7)))
-          (todo "PROJ|STRT|WAIT|NEXT")))
-        ))
+        '(("n" "What's Next?"
+           ((agenda "" ((org-agenda-span 7)))
+            (todo "PROJ|STRT|WAIT|NEXT")))
+          ("h" "What's Next? (home)"
+           ((agenda "" ((org-agenda-span 7)))
+            (todo "PROJ|STRT|WAIT|NEXT"))
+           ((org-agenda-files '("~/org/todo.org"))))
+          ("w" "What's Next? (work)"
+           ((agenda "" ((org-agenda-span 7)))
+            (todo "PROJ|STRT|WAIT|NEXT"))
+           ((org-agenda-files '("~/org/todo_work.org"))))))
 
 (use-package! org-pandoc-import :after org)
 

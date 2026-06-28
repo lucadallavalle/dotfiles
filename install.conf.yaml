@@ -27,6 +27,7 @@
     ~/.nvm-init: nvm-init
     ~/.ng: ng
     ~/.fzf: fzf
+    ~/.pnpm: pnpm
     ~/.config/lazygit/config.yml: lazygit.yml
     ~/.config/doom/: doom-emacs
     ~/.gitconfig: gitconfig
