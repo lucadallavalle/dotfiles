@@ -1,5 +1,13 @@
-export PNPM_HOME="/home/ldv/.local/share/pnpm/bin"
+export PNPM_HOME="$HOME/.local/share/pnpm/bin"
 case ":$PATH:" in
   *":$PNPM_HOME/bin:"*) ;;
   *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
+
+# zsh completion, regenerated when the pnpm binary changes (e.g. after self-update)
+if [[ -n $ZSH_VERSION ]] && command -v pnpm >/dev/null; then
+  _pnpm_comp="${XDG_CACHE_HOME:-$HOME/.cache}/pnpm-completion.zsh"
+  [[ -s $_pnpm_comp && $_pnpm_comp -nt ${commands[pnpm]} ]] || pnpm completion zsh >| "$_pnpm_comp"
+  source "$_pnpm_comp"
+  unset _pnpm_comp
+fi
