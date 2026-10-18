@@ -9,3 +9,4 @@ alias vi=nvim
 alias em=emacs
 alias emacs="emacsclient -c -a 'emacs' &"
 alias lg=lazygit
+alias ag=claude

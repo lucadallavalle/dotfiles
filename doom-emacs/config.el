@@ -116,8 +116,8 @@
       (insert document)
       (goto-char (point-min)))))
 
-(defun my/org-add-ids-to-headlines-in-file ()
-  "Add ID properties to all headlines in the current file
-which do not already have one."
-  (interactive)
-  (org-map-entries 'org-id-get-create))
+(defun my/org-add-ids-to-headlines-in-file (&optional all)
+  "Add ID properties to top-level headlines in the current file
+which do not already have one. With prefix argument ALL, to every headline."
+  (interactive "P")
+  (org-map-entries 'org-id-get-create (unless all "LEVEL=1")))
