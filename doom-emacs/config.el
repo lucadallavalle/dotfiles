@@ -99,11 +99,7 @@
           ("h" "What's Next? (home)"
            ((agenda "" ((org-agenda-span 7)))
             (todo "PROJ|STRT|WAIT|NEXT"))
-           ((org-agenda-files '("~/org/todo.org"))))
-          ("w" "What's Next? (work)"
-           ((agenda "" ((org-agenda-span 7)))
-            (todo "PROJ|STRT|WAIT|NEXT"))
-           ((org-agenda-files '("~/org/todo_work.org"))))))
+           ((org-agenda-files '("~/org/todo.org"))))))
 
 (use-package! org-pandoc-import :after org)
 
