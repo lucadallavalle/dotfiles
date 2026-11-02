@@ -20,3 +20,5 @@
 	helper = !/usr/bin/gh auth git-credential
 [gpg "ssh"]
 	allowedSignersFile = /home/ldv/.ssh/allowed_signers
+[pull]
+	rebase = true
