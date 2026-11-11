@@ -117,3 +117,28 @@
 which do not already have one. With prefix argument ALL, to every headline."
   (interactive "P")
   (org-map-entries 'org-id-get-create (unless all "LEVEL=1")))
+
+(use-package! ai-code
+  :demand t
+  :config
+  ;; Agent to use. To switch to Pi later, change this to 'pi
+  ;; (or switch on the fly with SPC o c, then s).
+  (ai-code-set-backend 'claude-code)
+
+  ;; Terminal for the agent. Uncomment to use eat instead of vterm.
+  ;; (setq ai-code-backends-infra-terminal-backend 'eat)
+
+  ;; SPC o c opens the ai-code menu
+  (map! :leader :desc "AI code" "o c" #'ai-code-menu)
+
+  ;; Show the agent's edits in open buffers right away
+  (global-auto-revert-mode 1)
+  (setq auto-revert-interval 1)
+
+  ;; Add AI actions to Magit's menus
+  (after! magit
+    (ai-code-magit-setup-transients)))
+
+(after! magit
+  ;; List the repo's worktrees in every Magit status buffer
+  (add-hook 'magit-status-sections-hook #'magit-insert-worktrees t))

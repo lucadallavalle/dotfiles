@@ -54,3 +54,4 @@
            :files ("*.el" "filters" "preprocessors")))
 
 (package! catppuccin-theme)
+(package! ai-code)
