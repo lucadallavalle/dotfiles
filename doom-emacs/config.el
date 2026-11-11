@@ -79,6 +79,8 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
+(setq projectile-project-search-path '("~/dev"))
+
 (after! org
   (setq org-refile-targets '((org-agenda-files :maxlevel . 3)))
   (setq org-refile-use-outline-path 'file)
@@ -103,42 +105,28 @@
 
 (use-package! org-pandoc-import :after org)
 
-;; Custom functions.
-(defun my/org-reformat-buffer ()
-  (interactive)
-  (when (y-or-n-p "Really format current buffer? ")
-    (let ((document (org-element-interpret-data (org-element-parse-buffer))))
-      (erase-buffer)
-      (insert document)
-      (goto-char (point-min)))))
-
-(defun my/org-add-ids-to-headlines-in-file (&optional all)
-  "Add ID properties to top-level headlines in the current file
-which do not already have one. With prefix argument ALL, to every headline."
-  (interactive "P")
-  (org-map-entries 'org-id-get-create (unless all "LEVEL=1")))
-
 (use-package! ai-code
   :demand t
   :config
-  ;; Agent to use. To switch to Pi later, change this to 'pi
-  ;; (or switch on the fly with SPC o c, then s).
-  (ai-code-set-backend 'claude-code)
-
-  ;; Terminal for the agent. Uncomment to use eat instead of vterm.
+  (ai-code-set-backend 'claude-code)      ; later: 'pi
+  ;; Task worktrees go in each repo's .worktrees/ folder (see functions/agents.el).
+  ;; This only affects ai-code's own worktree command, if you use it directly.
+  (setq ai-code-git-worktree-root (expand-file-name "~/worktrees"))
+  ;; Agent window on the right, as in the layout
+  (setq ai-code-backends-infra-window-side 'right
+        ai-code-backends-infra-window-width 90)
   ;; (setq ai-code-backends-infra-terminal-backend 'eat)
-
-  ;; SPC o c opens the ai-code menu
   (map! :leader :desc "AI code" "o c" #'ai-code-menu)
-
-  ;; Show the agent's edits in open buffers right away
   (global-auto-revert-mode 1)
   (setq auto-revert-interval 1)
-
-  ;; Add AI actions to Magit's menus
   (after! magit
     (ai-code-magit-setup-transients)))
 
 (after! magit
-  ;; List the repo's worktrees in every Magit status buffer
   (add-hook 'magit-status-sections-hook #'magit-insert-worktrees t))
+
+;; Custom functions.
+;; Load everything in functions/ (agents.el, sessions.el, ...)
+(dolist (file (directory-files (expand-file-name "functions" doom-user-dir)
+                               t "\\.el\\'"))
+  (load file nil t))
