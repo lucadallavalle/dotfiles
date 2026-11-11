@@ -13,6 +13,9 @@
 ;; Keys (SPC j = "jobs"):
 ;;   SPC j n  new task          SPC j f  finish task (after merging)
 ;;   SPC j g  Magit for this task's worktree
+;;   SPC j e  file tree for this task's worktree
+;;   SPC j l  restore the layout (agent, tree, dashboard)
+;;   SPC j z  zoom the current window, again to restore
 ;;   SPC j r  resume agent here SPC j R  resume agents in all task workspaces
 ;;   SPC j h  repo home (main checkout, for questions)
 ;;   SPC j s  scratch agent     SPC j a  one-off question, no session
@@ -257,7 +260,7 @@ ai-code task file; describe the task there. The agent opens on the right."
         (find-file task)
       (dired path))
     (my/agent--start-in path)
-    (my/agent-dashboard-show)))
+    (my/agent--show-panels)))
 
 (defun my/agent-resume (&optional fresh)
   "Resume the agent for the current workspace's checkout.
@@ -274,6 +277,78 @@ With prefix FRESH (\\[universal-argument]), start a new conversation instead."
 Unlike SPC g g, this is right even when the task file is focused."
   (interactive)
   (magit-status-setup-buffer (my/agent--current-dir)))
+
+(defun my/agent-tree ()
+  "Show the file tree for the current workspace's checkout only.
+Unlike SPC o p, this never falls back to the main checkout."
+  (interactive)
+  (require 'treemacs)
+  (with-current-buffer (dired-noselect (my/agent--current-dir))
+    (treemacs-add-and-display-current-project-exclusively)))
+
+(defun my/agent--show-panels ()
+  "Show the task's agent, file tree and sessions dashboard, keeping focus."
+  (save-selected-window
+    (with-demoted-errors "Agent panels: %S"
+      (when-let* ((dir (my/agent--workspace-dir))
+                  (agent (car (my/agent--session-buffers dir)))
+                  ((not (get-buffer-window agent))))
+        (ai-code-backends-infra--display-buffer-in-side-window agent))
+      (my/agent-tree)))
+  (my/agent-dashboard-show))
+
+(defun my/agent-layout ()
+  "Bring back this workspace's agent, file tree and dashboard windows."
+  (interactive)
+  (my/agent--show-panels))
+
+(defvar my/zoom--saved nil
+  "Alist of ((FRAME . WORKSPACE) . WINDOW-CONFIGURATION) for `my/zoom-toggle'.")
+
+(defun my/zoom-toggle ()
+  "Show only the current window, full frame; run again to restore the layout.
+Unlike SPC w m m, this also works from side windows such as the agent."
+  (interactive)
+  (let* ((key (cons (selected-frame) (+workspace-current-name)))
+         (saved (assoc key my/zoom--saved)))
+    (if saved
+        (progn
+          (setq my/zoom--saved (delq saved my/zoom--saved))
+          (set-window-configuration (cdr saved)))
+      (push (cons key (current-window-configuration)) my/zoom--saved)
+      (let ((ignore-window-parameters t))
+        (delete-other-windows)))))
+
+(defun my/agent--workspace-for (dir)
+  "Return the name of the workspace whose checkout is DIR, or nil."
+  (seq-find (lambda (name)
+              (when-let* ((d (my/agent--workspace-dir name)))
+                (file-equal-p d dir)))
+            (+workspace-list-names)))
+
+(defun my/agent-dashboard-visit-a (fn &rest args)
+  "Jump to the session's workspace instead of showing its buffer here."
+  (if-let* ((session (ai-code-session-dashboard--session-at-point))
+            (root (ai-code-session-repo-root session))
+            (name (my/agent--workspace-for root)))
+      (progn
+        (+workspace-switch name)
+        (my/agent--show-panels)
+        (when-let* ((win (get-buffer-window (ai-code-session-buffer session))))
+          (select-window win)))
+    (apply fn args)))
+
+(advice-add 'ai-code-session-dashboard-visit :around #'my/agent-dashboard-visit-a)
+
+;; Evil's normal state hides the dashboard's own keys (RET, r, g, k, D), so
+;; bind evil-friendly ones. j/k keep moving the cursor.
+(map! :after ai-code-session
+      :map ai-code-session-dashboard-mode-map
+      :n "RET" #'ai-code-session-dashboard-visit
+      :n "gr"  #'ai-code-session-dashboard-refresh
+      :n "x"   #'ai-code-session-dashboard-kill-session
+      :n "D"   #'ai-code-session-dashboard-open-diff
+      :n "q"   #'quit-window)
 
 (defun my/agent-resume-all ()
   "Continue the agent in every task workspace and show the dashboard there.
@@ -292,7 +367,7 @@ Runs after a session restore. Repo home and scratch workspaces are skipped."
               (unless (my/agent--session-buffers dir)
                 (my/agent--start-in dir t)
                 (cl-incf count))
-              (my/agent-dashboard-show))
+              (my/agent--show-panels))
           (error (message "Skipped %s: %s" name (error-message-string err))))))
     (+workspace-switch origin)
     (message "Resumed %d agent(s)" count)))
@@ -360,7 +435,7 @@ The task file stays in the main repo's .ai.code.files/."
         (user-error "git worktree remove failed; see the *magit-process* buffer"))
       (when (and branch (y-or-n-p (format "Also delete branch %s? " branch)))
         (unless (zerop (magit-call-git "branch" "-d" branch))
-          (message "Branch %s not deleted (not fully merged?); use Magit b k" branch))))
+          (message "Branch %s not deleted (not fully merged?); use Magit b x" branch))))
     (+workspace/kill workspace)
     (message "Task %s finished" workspace)))
 
@@ -400,6 +475,9 @@ Runs in the current project, so the agent can read its files."
        :desc "New task"                  "n" #'my/agent-task
        :desc "Finish task"               "f" #'my/agent-finish
        :desc "Magit for this task"       "g" #'my/agent-magit
+       :desc "File tree for this task"   "e" #'my/agent-tree
+       :desc "Restore task layout"       "l" #'my/agent-layout
+       :desc "Zoom window (toggle)"      "z" #'my/zoom-toggle
        :desc "Resume agent here"         "r" #'my/agent-resume
        :desc "Resume all agents"         "R" #'my/agent-resume-all
        :desc "Repo home (questions)"     "h" #'my/agent-home
