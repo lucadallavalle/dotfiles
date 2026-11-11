@@ -23,7 +23,7 @@
 ;; See 'C-h v doom-font' for documentation and more examples of what they
 ;; accept. For example:
 ;;
-;(setq doom-font (font-spec :family "Fira Code" :size 12 :weight 'semi-light)
+;; (setq doom-font (font-spec :family "Fira Code" :size 12 :weight 'semi-light)
 ;;      doom-variable-pitch-font (font-spec :family "Fira Sans" :size 13))
 (setq doom-font (font-spec :family "Fira Code" :size 16 :weight 'regular)
       doom-variable-pitch-font (font-spec :family "IBM Plex Sans" :size 16))
@@ -79,8 +79,10 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
+;; Where projectile looks for projects
 (setq projectile-project-search-path '("~/dev"))
 
+;; Org: refiling, TODO keywords, logging
 (after! org
   (setq org-refile-targets '((org-agenda-files :maxlevel . 3)))
   (setq org-refile-use-outline-path 'file)
@@ -92,19 +94,24 @@
   (setq org-id-link-to-org-use-id 'use-existing)
   (setq org-todo-repeat-to-state 'REPEAT)
   (setq calendar-week-start-day 1))
-  (setq doom-modeline-enable-word-count 't)
 
-  (setq org-agenda-custom-commands
-        '(("n" "What's Next?"
-           ((agenda "" ((org-agenda-span 7)))
-            (todo "PROJ|STRT|WAIT|NEXT")))
-          ("h" "What's Next? (home)"
-           ((agenda "" ((org-agenda-span 7)))
-            (todo "PROJ|STRT|WAIT|NEXT"))
-           ((org-agenda-files '("~/org/todo.org"))))))
+;; Word count in the modeline for text buffers
+(setq doom-modeline-enable-word-count 't)
 
+;; Agenda views: SPC o A, then n (everything) or h (home only)
+(setq org-agenda-custom-commands
+      '(("n" "What's Next?"
+         ((agenda "" ((org-agenda-span 7)))
+          (todo "PROJ|STRT|WAIT|NEXT")))
+        ("h" "What's Next? (home)"
+         ((agenda "" ((org-agenda-span 7)))
+          (todo "PROJ|STRT|WAIT|NEXT"))
+         ((org-agenda-files '("~/org/todo.org"))))))
+
+;; Import other document formats into Org through pandoc
 (use-package! org-pandoc-import :after org)
 
+;; Coding agents (see README.md and functions/agents.el)
 (use-package! ai-code
   :demand t
   :config
@@ -122,8 +129,18 @@
   (after! magit
     (ai-code-magit-setup-transients)))
 
+;; List the repo's worktrees in every Magit status buffer
 (after! magit
   (add-hook 'magit-status-sections-hook #'magit-insert-worktrees t))
+
+;; Save file buffers by themselves after 5 idle seconds, so nothing is lost
+;; and agents and Magit always see what's on screen.
+(setq auto-save-visited-interval 5)
+(auto-save-visited-mode 1)
+
+;; Keep Emacs' own Lisp indentation: an .editorconfig indent_size would
+;; otherwise force a fixed offset and misalign Lisp code.
+(setq editorconfig-lisp-use-default-indent t)
 
 ;; Custom functions.
 ;; Load everything in functions/ (agents.el, sessions.el, ...)

@@ -30,7 +30,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 
 ## How it works
 
-- Worktrees live at `<repo>/.worktrees/<branch>`, ignored through `.git/info/exclude`.
+- Worktrees live at `<repo>/.worktrees/<branch>`. They, `.ai.code.files/` and the task-file links are ignored through `.git/info/exclude`, so nothing of this is ever committed.
 - Workspaces are named `repo:branch`. Each stores its worktree path as a workspace parameter, saved with the session.
 - Resume continues the latest conversation in the worktree (`--continue`), without a picker.
 - The task file is the prompt notebook: write under a heading, `C-c C-c` sends it to the task's agent. The real file is in the main checkout's `.ai.code.files/`, symlinked into the worktree, so it survives `SPC j f`.
@@ -81,8 +81,11 @@ Keys differ from stock Magit because of evil.
 
 ## Not yet exercised
 
-As of 2026-11-11: `SPC j f`, `SPC j h`, `SPC j s`, `SPC j a`, and a daemon restart with live task workspaces.
+As of 2026-11-11: `SPC j h`, `SPC j s`, `SPC j a`.
 
 ## After changes
 
-Edits to `config.el` or `functions/` need a daemon restart (or `M-x eval-buffer`). `doom sync` only after changing `init.el` or `packages.el`.
+- `config.el` or `functions/`: restart the daemon, or `M-x eval-buffer`.
+- `init.el` or `packages.el`: `~/.config/emacs/bin/doom sync`, then restart the daemon.
+- Restart the daemon: `SPC q s` (save session), then `systemctl --user restart emacs` and `emacsclient -c`. `SPC q q` only closes the frame.
+- `doom upgrade` also updates ai-code, whose internal functions `functions/agents.el` relies on: retest `SPC j n`, `SPC j g` and the dashboard afterwards.
