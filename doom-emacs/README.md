@@ -7,7 +7,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 
 - `config.el`: ai-code setup, Magit worktree section, loads everything in `functions/`.
 - `functions/agents.el`: the `SPC j` commands.
-- `functions/sessions.el`: on the daemon's first frame, restores the last session and resumes all task agents.
+- `functions/sessions.el`: on the daemon's first frame, restores the last session and resumes all task agents; saves the session when idle.
 
 ## Keys
 
@@ -87,5 +87,6 @@ As of 2026-11-11: `SPC j h`, `SPC j s`, `SPC j a`.
 
 - `config.el` or `functions/`: restart the daemon, or `M-x eval-buffer`.
 - `init.el` or `packages.el`: `~/.config/emacs/bin/doom sync`, then restart the daemon.
-- Restart the daemon: `SPC q s` (save session), then `systemctl --user restart emacs` and `emacsclient -c`. `SPC q q` only closes the frame.
+- Restart the daemon: `systemctl --user restart emacs`, then `emacsclient -c`. `SPC q q` only closes the frame.
+- The session saves itself after two idle minutes and on exit; `SPC q s` forces a save right now.
 - `doom upgrade` also updates ai-code, whose internal functions `functions/agents.el` relies on: retest `SPC j n`, `SPC j g` and the dashboard afterwards.
