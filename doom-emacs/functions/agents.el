@@ -14,7 +14,6 @@
 ;;   SPC j n  new task          SPC j f  finish task (after merging)
 ;;   SPC j g  Magit for this task's worktree
 ;;   SPC j r  resume agent here SPC j R  resume agents in all task workspaces
-;;   SPC j t  resume from task file (works across backends)
 ;;   SPC j h  repo home (main checkout, for questions)
 ;;   SPC j s  scratch agent     SPC j a  one-off question, no session
 ;;   SPC j d  sessions dashboard  SPC j j  jump to a workspace
@@ -116,19 +115,85 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
          (string= (file-name-as-directory (file-truename owner)) target)))
      (buffer-list))))
 
+(defvar my/agent-continue-switches
+  '((claude-code ai-code-claude-code-program-switches "--continue")
+    (pi ai-code-pi-program-switches "--continue"))
+  "Per backend: its switches variable and the flag that continues the most
+recent conversation in a directory, without showing a picker.")
+
 (defun my/agent--start-in (dir &optional resume)
-  "Start an agent rooted at DIR. With RESUME, resume a previous conversation."
+  "Start an agent rooted at DIR.
+With RESUME, continue the most recent conversation in DIR; for a backend
+missing from `my/agent-continue-switches', show its resume picker instead."
   (with-current-buffer (dired-noselect dir)
-    (if resume (ai-code-cli-resume) (ai-code-cli-start))))
+    (pcase (and resume
+                (alist-get ai-code-selected-backend my/agent-continue-switches))
+      ((and `(,var ,flag) (guard (boundp var)))
+       (cl-progv (list var) (list (append (symbol-value var) (list flag)))
+         (ai-code-cli-start)))
+      (_ (if resume (ai-code-cli-resume) (ai-code-cli-start))))))
+
+(defun my/agent-dashboard-show ()
+  "Show and refresh the sessions dashboard here, without selecting it."
+  (require 'ai-code-session)
+  (if (get-buffer-window ai-code-session-dashboard-buffer-name)
+      (with-current-buffer ai-code-session-dashboard-buffer-name
+        (ai-code-session-dashboard-refresh))
+    (save-selected-window (ai-code-session-dashboard))))
 
 (defun my/agent--task-file (dir)
   "Return the task file linked into worktree DIR, or nil."
   (seq-find #'file-symlink-p (directory-files dir t "\\.org\\'")))
 
+;; ai-code ties a task file to its worktree with a buffer-local setting made
+;; when the file is created. It's lost when the file is reopened (e.g. after a
+;; session restore), and prompts sent from the file would then go to the main
+;; checkout. Re-tie it whenever a task file is opened.
+(defun my/agent-bind-task-file-h ()
+  "Tie a task file to the worktree it is linked into, if any."
+  (when (and buffer-file-name
+             (string-match-p "/\\.ai\\.code\\.files/[^/]+\\.org\\'"
+                             buffer-file-name))
+    (ignore-errors
+      (require 'magit)
+      (require 'ai-code)
+      (let ((name (file-name-nondirectory buffer-file-name)))
+        (when-let* ((dir (seq-find
+                          (lambda (dir)
+                            (let ((link (expand-file-name name dir)))
+                              (and (file-symlink-p link)
+                                   (file-equal-p link buffer-file-name))))
+                          (mapcar #'car (cdr (magit-list-worktrees))))))
+          (ai-code--set-session-project-root dir))))))
+
+(add-hook 'find-file-hook #'my/agent-bind-task-file-h)
+
+;; ai-code never refreshes the dashboard by itself, so do it on a timer while
+;; it's visible.
+(defvar my/agent-dashboard-refresh-seconds 10
+  "How often the visible sessions dashboard is refreshed.")
+
+(defvar my/agent-dashboard-timer nil)
+
+(defun my/agent-dashboard-refresh-visible ()
+  "Refresh the sessions dashboard if a window shows it."
+  (when-let* ((buf (get-buffer "*AI Code Sessions*"))
+              ((get-buffer-window buf t)))
+    (with-current-buffer buf
+      (with-demoted-errors "Dashboard refresh: %S"
+        (ai-code-session-dashboard-refresh)))))
+
+(when (timerp my/agent-dashboard-timer)
+  (cancel-timer my/agent-dashboard-timer))
+(setq my/agent-dashboard-timer
+      (run-with-timer my/agent-dashboard-refresh-seconds
+                      my/agent-dashboard-refresh-seconds
+                      #'my/agent-dashboard-refresh-visible))
+
 ;; Doom opens symlinks as their real file, so a task file linked into a
-;; worktree looks like it belongs to the main checkout. The checkout is
-;; therefore worked out from the workspace name (REPO:BRANCH), not from the
-;; focused buffer.
+;; worktree looks like it belongs to the main checkout. Each workspace
+;; therefore records its checkout as a workspace parameter, which is saved
+;; and restored with the session.
 
 (defun my/agent--main-root-of (dir)
   "Return the main checkout of the repository containing DIR, or nil."
@@ -136,32 +201,21 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
     (let ((default-directory dir))
       (ignore-errors (my/agent--repo-root)))))
 
-(defun my/agent--workspace-dir ()
-  "Return the checkout that the current workspace's name refers to, or nil.
-A workspace named REPO:BRANCH maps to the worktree of REPO that has BRANCH
-checked out. The repo is found through the workspace's buffers."
-  (let ((name (+workspace-current-name)))
-    (when (string-match "\\`\\([^:]+\\):\\(.+\\)\\'" name)
-      (let ((repo (match-string 1 name))
-            (branch (match-string 2 name))
-            (seen nil)
-            (found nil))
-        (dolist (buf (+workspace-buffer-list))
-          (unless found
-            (when-let* ((root (my/agent--main-root-of
-                               (buffer-local-value 'default-directory buf)))
-                        ((not (member root seen))))
-              (push root seen)
-              (when (string= (my/agent--repo-name root) repo)
-                (let ((default-directory root))
-                  (setq found
-                        (car (seq-find (lambda (wt) (equal (nth 2 wt) branch))
-                                       (magit-list-worktrees)))))))))
-        (and found (file-name-as-directory found))))))
+(defun my/agent--workspace-dir (&optional name)
+  "Return the checkout recorded for workspace NAME (default: current), or nil."
+  (when-let* ((persp (if name (persp-get-by-name name) (get-current-persp)))
+              ((perspective-p persp))
+              (dir (persp-parameter 'my/agent-dir persp)))
+    (file-name-as-directory dir)))
+
+(defun my/agent--set-workspace-dir (dir)
+  "Record DIR as the current workspace's checkout."
+  (set-persp-parameter 'my/agent-dir (expand-file-name dir)))
 
 (defun my/agent--current-dir ()
   "Return the Git checkout the current workspace is about.
-Use the workspace name first; fall back to the selected window's buffer."
+Use the workspace's recorded checkout; fall back to the selected window's
+buffer."
   (require 'magit)
   (or (my/agent--workspace-dir)
       (with-current-buffer (window-buffer (selected-window))
@@ -194,6 +248,7 @@ ai-code task file; describe the task there. The agent opens on the right."
       (user-error "Workspace %s already exists; jump to it with SPC j j" workspace))
     (setq path (my/agent--create-worktree root branch start))
     (+workspace-switch workspace t)
+    (my/agent--set-workspace-dir path)
     (delete-other-windows)
     (dired path)
     (my/agent--create-task-file root path branch)
@@ -201,7 +256,8 @@ ai-code task file; describe the task there. The agent opens on the right."
     (if-let ((task (my/agent--task-file path)))
         (find-file task)
       (dired path))
-    (my/agent--start-in path)))
+    (my/agent--start-in path)
+    (my/agent-dashboard-show)))
 
 (defun my/agent-resume (&optional fresh)
   "Resume the agent for the current workspace's checkout.
@@ -220,33 +276,26 @@ Unlike SPC g g, this is right even when the task file is focused."
   (magit-status-setup-buffer (my/agent--current-dir)))
 
 (defun my/agent-resume-all ()
-  "Resume agents in every task workspace (named REPO:BRANCH).
-Run this after restoring a session. Each agent shows its resume picker."
+  "Continue the agent in every task workspace and show the dashboard there.
+Runs after a session restore. Repo home and scratch workspaces are skipped."
   (interactive)
   (require 'ai-code)
   (let ((origin (+workspace-current-name))
         (count 0))
     (dolist (name (+workspace-list-names))
-      (when (string-match-p ":" name)
+      (when-let* ((dir (my/agent--workspace-dir name))
+                  ((file-directory-p dir))
+                  ((not (my/agent--main-checkout-p dir))))
         (+workspace-switch name)
         (condition-case err
-            (let ((dir (my/agent--current-dir)))
-              ;; Only task worktrees; repo home workspaces are skipped.
-              (unless (or (my/agent--main-checkout-p dir)
-                          (my/agent--session-buffers dir))
+            (progn
+              (unless (my/agent--session-buffers dir)
                 (my/agent--start-in dir t)
-                (cl-incf count)))
+                (cl-incf count))
+              (my/agent-dashboard-show))
           (error (message "Skipped %s: %s" name (error-message-string err))))))
     (+workspace-switch origin)
-    (message "Resumed %d agent(s); visit each workspace to pick its conversation"
-             count)))
-
-(defun my/agent-resume-from-task ()
-  "Brief the agent from a task file instead of its chat history.
-Works across backends: use it after switching from Claude Code to Pi."
-  (interactive)
-  (require 'ai-code)
-  (call-interactively #'ai-code-task-resume))
+    (message "Resumed %d agent(s)" count)))
 
 (defun my/agent-home ()
   "Open the repo's home workspace (main checkout) with an agent for questions.
@@ -259,6 +308,7 @@ Ask with `q' in the ai-code menu, or use plan mode, so it doesn't edit main."
          (workspace (format "%s:%s" (my/agent--repo-name root)
                             (or (magit-get-current-branch) "home"))))
     (+workspace-switch workspace t)
+    (my/agent--set-workspace-dir root)
     (unless (my/agent--session-buffers root)
       (delete-other-windows)
       (dired root)
@@ -352,7 +402,6 @@ Runs in the current project, so the agent can read its files."
        :desc "Magit for this task"       "g" #'my/agent-magit
        :desc "Resume agent here"         "r" #'my/agent-resume
        :desc "Resume all agents"         "R" #'my/agent-resume-all
-       :desc "Resume from task file"     "t" #'my/agent-resume-from-task
        :desc "Repo home (questions)"     "h" #'my/agent-home
        :desc "Scratch agent"             "s" #'my/agent-scratch
        :desc "Ask once"                  "a" #'my/ask
