@@ -55,23 +55,24 @@ For Pi, use \\='(\"pi\" \"-p\").")
   "Return the worktree path for BRANCH inside the main checkout ROOT."
   (expand-file-name branch (expand-file-name my/agent-worktrees-dir root)))
 
-(defun my/agent--exclude-worktrees (root)
-  "Make Git ignore the worktrees folder in ROOT, via .git/info/exclude.
+(defun my/agent--exclude (root &rest entries)
+  "Make Git ignore ENTRIES in ROOT and its worktrees, via .git/info/exclude.
 This is a local ignore list: it isn't committed, so teammates are unaffected."
-  (let* ((exclude (expand-file-name ".git/info/exclude" root))
-         (entry (concat "/" my/agent-worktrees-dir "/")))
+  (let ((exclude (expand-file-name ".git/info/exclude" root)))
     (make-directory (file-name-directory exclude) t)
-    (unless (and (file-exists-p exclude)
-                 (with-temp-buffer
-                   (insert-file-contents exclude)
-                   (re-search-forward (concat "^" (regexp-quote entry) "$") nil t)))
-      (with-temp-buffer
-        (when (file-exists-p exclude)
-          (insert-file-contents exclude)
-          (goto-char (point-max))
-          (unless (bolp) (insert "\n")))
-        (insert entry "\n")
-        (write-region (point-min) (point-max) exclude nil 'silent)))))
+    (with-temp-buffer
+      (when (file-exists-p exclude)
+        (insert-file-contents exclude))
+      (let ((changed nil))
+        (dolist (entry entries)
+          (goto-char (point-min))
+          (unless (re-search-forward (concat "^" (regexp-quote entry) "$") nil t)
+            (goto-char (point-max))
+            (unless (bolp) (insert "\n"))
+            (insert entry "\n")
+            (setq changed t)))
+        (when changed
+          (write-region (point-min) (point-max) exclude nil 'silent))))))
 
 (defun my/agent--create-worktree (root branch start-point)
   "Create BRANCH from START-POINT in a worktree under ROOT/.worktrees/.
@@ -80,7 +81,10 @@ Reuse BRANCH if it already exists. Return the worktree path."
         (path (my/agent--worktree-path root branch)))
     (when (file-exists-p path)
       (user-error "%s already exists" path))
-    (my/agent--exclude-worktrees root)
+    ;; Worktrees and ai-code's task files stay out of Git.
+    (my/agent--exclude root
+                       (concat "/" my/agent-worktrees-dir "/")
+                       "/.ai.code.files/")
     (make-directory (file-name-directory (directory-file-name path)) t)
     (unless (zerop (if (magit-branch-p branch)
                        (magit-call-git "worktree" "add" path branch)
@@ -121,8 +125,8 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
 (defvar my/agent-continue-switches
   '((claude-code ai-code-claude-code-program-switches "--continue")
     (pi ai-code-pi-program-switches "--continue"))
-  "Per backend: its switches variable and the flag that continues the most
-recent conversation in a directory, without showing a picker.")
+  "How each backend continues the latest conversation in a directory.
+Each entry is (BACKEND SWITCHES-VARIABLE FLAG); FLAG skips the picker.")
 
 (defun my/agent--start-in (dir &optional resume)
   "Start an agent rooted at DIR.
@@ -257,7 +261,10 @@ ai-code task file; describe the task there. The agent opens on the right."
     (my/agent--create-task-file root path branch)
     (delete-other-windows)
     (if-let ((task (my/agent--task-file path)))
-        (find-file task)
+        (progn
+          ;; The link into the worktree must not be committed either.
+          (my/agent--exclude root (concat "/" (file-name-nondirectory task)))
+          (find-file task))
       (dired path))
     (my/agent--start-in path)
     (my/agent--show-panels)))
@@ -327,7 +334,8 @@ Unlike SPC w m m, this also works from side windows such as the agent."
             (+workspace-list-names)))
 
 (defun my/agent-dashboard-visit-a (fn &rest args)
-  "Jump to the session's workspace instead of showing its buffer here."
+  "Jump to the session's workspace instead of showing its buffer here.
+Call FN with ARGS when the session has no workspace."
   (if-let* ((session (ai-code-session-dashboard--session-at-point))
             (root (ai-code-session-repo-root session))
             (name (my/agent--workspace-for root)))
@@ -400,6 +408,22 @@ Ask with `q' in the ai-code menu, or use plan mode, so it doesn't edit main."
     (find-file (expand-file-name "notes.org" my/agent-scratch-dir))
     (my/agent--start-in my/agent-scratch-dir)))
 
+(defun my/agent--close-workspace (name)
+  "Kill workspace NAME and land in the previous one with its layout intact.
+`+workspace/kill' replaces the selected window's buffer with the Doom
+dashboard when it isn't a file buffer, which wrecks an agent or sessions
+dashboard window."
+  (let ((next (or (and (+workspace-exists-p +workspace--last)
+                       (not (equal +workspace--last name))
+                       +workspace--last)
+                  (car (remove name (+workspace-list-names))))))
+    (if (not next)
+        (+workspace/kill name)
+      (+workspace-kill name)
+      (+workspace-switch next)
+      (when (my/agent--workspace-dir)
+        (my/agent--show-panels)))))
+
 (defun my/agent-finish ()
   "Finish the current task after merging it.
 Stops its agent, removes the worktree and closes the workspace.
@@ -417,8 +441,12 @@ The task file stays in the main repo's .ai.code.files/."
     (let ((untracked (cl-remove-if
                       (lambda (f) (file-symlink-p (expand-file-name f dir)))
                       (magit-untracked-files))))
-      (when (or (magit-anything-modified-p) untracked)
-        (user-error "Worktree has uncommitted or untracked changes; commit or discard them in Magit first")))
+      (let ((changed (delete-dups (append (magit-staged-files)
+                                          (magit-unstaged-files)
+                                          untracked))))
+        (when changed
+          (user-error "Commit or discard first (SPC j g): %s"
+                      (string-join changed ", ")))))
     (let ((main-head (let ((default-directory main)) (magit-rev-parse "HEAD"))))
       (unless (magit-git-success "merge-base" "--is-ancestor" "HEAD" main-head)
         (unless (y-or-n-p (format "%s is not merged into the main checkout. Remove anyway? "
@@ -436,7 +464,7 @@ The task file stays in the main repo's .ai.code.files/."
       (when (and branch (y-or-n-p (format "Also delete branch %s? " branch)))
         (unless (zerop (magit-call-git "branch" "-d" branch))
           (message "Branch %s not deleted (not fully merged?); use Magit b x" branch))))
-    (+workspace/kill workspace)
+    (my/agent--close-workspace workspace)
     (message "Task %s finished" workspace)))
 
 (defun my/ask (question)
