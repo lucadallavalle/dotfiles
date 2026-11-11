@@ -148,6 +148,16 @@ missing from `my/agent-continue-switches', show its resume picker instead."
         (ai-code-session-dashboard-refresh))
     (save-selected-window (ai-code-session-dashboard))))
 
+;; Without this, opening a frame or switching workspace swaps the dashboard
+;; for the Doom dashboard: its buffer belongs to no workspace, and its window
+;; accepts any buffer.
+(defun my/agent-dashboard-dedicate-a (&rest _)
+  "Make the sessions dashboard's window show nothing but the dashboard."
+  (when-let* ((win (get-buffer-window ai-code-session-dashboard-buffer-name)))
+    (set-window-dedicated-p win t)))
+
+(advice-add 'ai-code-session-dashboard :after #'my/agent-dashboard-dedicate-a)
+
 (defun my/agent--task-file (dir)
   "Return the task file linked into worktree DIR, or nil."
   (seq-find #'file-symlink-p (directory-files dir t "\\.org\\'")))
@@ -202,12 +212,6 @@ missing from `my/agent-continue-switches', show its resume picker instead."
 ;; therefore records its checkout as a workspace parameter, which is saved
 ;; and restored with the session.
 
-(defun my/agent--main-root-of (dir)
-  "Return the main checkout of the repository containing DIR, or nil."
-  (when (and dir (not (file-remote-p dir)) (file-directory-p dir))
-    (let ((default-directory dir))
-      (ignore-errors (my/agent--repo-root)))))
-
 (defun my/agent--workspace-dir (&optional name)
   "Return the checkout recorded for workspace NAME (default: current), or nil."
   (when-let* ((persp (if name (persp-get-by-name name) (get-current-persp)))
@@ -228,11 +232,6 @@ buffer."
       (with-current-buffer (window-buffer (selected-window))
         (magit-toplevel))
       (user-error "Can't tell which Git checkout this workspace is for")))
-
-(defun my/agent--main-checkout-p (dir)
-  "Return non-nil when DIR is a repository's main checkout, not a worktree."
-  (when-let ((main (my/agent--main-root-of dir)))
-    (file-equal-p dir main)))
 
 ;;; Commands
 
@@ -267,6 +266,37 @@ ai-code task file; describe the task there. The agent opens on the right."
           (find-file task))
       (dired path))
     (my/agent--start-in path)
+    (my/agent--show-panels)))
+
+;; A lost session file (e.g. after a Doom upgrade rebuilt .local) leaves task
+;; worktrees on disk with no workspace. This brings one back.
+(defun my/agent-open ()
+  "Reopen an existing task worktree: workspace + agent, conversation continued."
+  (interactive)
+  (require 'ai-code)
+  (let* ((root (my/agent--repo-root))
+         (default-directory root)
+         (repo (my/agent--repo-name root))
+         (base (file-name-as-directory
+                (expand-file-name my/agent-worktrees-dir root)))
+         (branches
+          (cl-loop for line in (magit-git-lines "worktree" "list" "--porcelain")
+                   when (string-prefix-p (concat "worktree " base) line)
+                   collect (substring line (length (concat "worktree " base)))))
+         (open (seq-remove (lambda (b) (+workspace-exists-p (format "%s:%s" repo b)))
+                           branches))
+         (branch (if open
+                     (completing-read "Reopen task: " open nil t)
+                   (user-error "No task worktree without a workspace in %s" repo)))
+         (path (my/agent--worktree-path root branch)))
+    (+workspace-switch (format "%s:%s" repo branch) t)
+    (my/agent--set-workspace-dir path)
+    (delete-other-windows)
+    (if-let ((task (my/agent--task-file path)))
+        (find-file task)
+      (dired path))
+    (unless (my/agent--session-buffers path)
+      (my/agent--start-in path t))
     (my/agent--show-panels)))
 
 (defun my/agent-resume (&optional fresh)
@@ -359,16 +389,15 @@ Call FN with ARGS when the session has no workspace."
       :n "q"   #'quit-window)
 
 (defun my/agent-resume-all ()
-  "Continue the agent in every task workspace and show the dashboard there.
-Runs after a session restore. Repo home and scratch workspaces are skipped."
+  "Continue the agent in every task and repo home workspace, with its panels.
+Runs after a session restore. The scratch workspace is skipped."
   (interactive)
   (require 'ai-code)
   (let ((origin (+workspace-current-name))
         (count 0))
     (dolist (name (+workspace-list-names))
       (when-let* ((dir (my/agent--workspace-dir name))
-                  ((file-directory-p dir))
-                  ((not (my/agent--main-checkout-p dir))))
+                  ((file-directory-p dir)))
         (+workspace-switch name)
         (condition-case err
             (progn
@@ -395,7 +424,8 @@ Ask with `q' in the ai-code menu, or use plan mode, so it doesn't edit main."
     (unless (my/agent--session-buffers root)
       (delete-other-windows)
       (dired root)
-      (my/agent--start-in root))))
+      (my/agent--start-in root))
+    (my/agent--show-panels)))
 
 (defun my/agent-scratch ()
   "Jump to the scratch workspace, starting its agent if needed."
@@ -501,6 +531,7 @@ Runs in the current project, so the agent can read its files."
 (map! :leader
       (:prefix-map ("j" . "agents")
        :desc "New task"                  "n" #'my/agent-task
+       :desc "Reopen task worktree"      "o" #'my/agent-open
        :desc "Finish task"               "f" #'my/agent-finish
        :desc "Magit for this task"       "g" #'my/agent-magit
        :desc "File tree for this task"   "e" #'my/agent-tree

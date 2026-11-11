@@ -14,6 +14,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 | Key       | Action                                                        |
 | --------- | ------------------------------------------------------------- |
 | `SPC j n` | New task: branch, worktree, workspace, agent                  |
+| `SPC j o` | Reopen an existing task worktree (workspace lost)             |
 | `SPC j g` | Magit for this task's worktree                                |
 | `SPC j e` | File tree (treemacs) for this task's worktree                 |
 | `SPC j l` | Restore the layout: agent, file tree, dashboard               |
@@ -34,7 +35,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 - Workspaces are named `repo:branch`. Each stores its worktree path as a workspace parameter, saved with the session.
 - Resume continues the latest conversation in the worktree (`--continue`), without a picker.
 - The task file is the prompt notebook: write under a heading, `C-c C-c` sends it to the task's agent. The real file is in the main checkout's `.ai.code.files/`, symlinked into the worktree, so it survives `SPC j f`.
-- `SPC j n` and the restore open the file tree on the worktree and the dashboard.
+- `SPC j n`, `SPC j o`, `SPC j h` and the restore open the file tree on the checkout and the dashboard.
 - The dashboard refreshes every 10 seconds while visible. In it: `RET` jumps to the session's workspace, `g r` refreshes, `x` kills the session, `D` opens Magit, `q` hides it.
 
 ## A task, start to finish
@@ -45,7 +46,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 3. Review with `SPC j g`. Merge from the main checkout: `SPC j h`, `SPC g g`, `m m`.
 4. `SPC j f` in the task workspace.
 
-After a daemon restart the workspaces, agents (with their conversations), trees and dashboard come back by themselves.
+After a daemon restart the task and home workspaces, agents (with their conversations), trees and dashboard come back by themselves.
 
 ## Magit and review keys
 
@@ -81,7 +82,7 @@ Keys differ from stock Magit because of evil.
 
 ## Not yet exercised
 
-As of 2026-11-11: `SPC j h`, `SPC j s`, `SPC j a`.
+As of 2026-11-11: `SPC j o`, `SPC j s`, `SPC j a`, home workspace resume after a restart.
 
 ## After changes
 
@@ -89,4 +90,5 @@ As of 2026-11-11: `SPC j h`, `SPC j s`, `SPC j a`.
 - `init.el` or `packages.el`: `~/.config/emacs/bin/doom sync`, then restart the daemon.
 - Restart the daemon: `systemctl --user restart emacs`, then `emacsclient -c`. `SPC q q` only closes the frame.
 - The session saves itself after two idle minutes and on exit; `SPC q s` forces a save right now.
+- `doom upgrade` can rebuild `.local` and drop the saved session: bring each task back with `SPC j o`.
 - `doom upgrade` also updates ai-code, whose internal functions `functions/agents.el` relies on: retest `SPC j n`, `SPC j g` and the dashboard afterwards.
