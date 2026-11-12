@@ -9,11 +9,21 @@ The delay lets the dashboard draw first, so it doesn't cover the session."
   (remove-hook 'server-after-make-frame-hook #'my/restore-session-once)
   (run-with-timer
    0.5 nil
-   (lambda ()
-     (doom-load-session)
-     (my/agent-resume-all))))
+   #'doom-load-session))
 
 (add-hook 'server-after-make-frame-hook #'my/restore-session-once)
+
+;; Every session load (also SPC q l) brings back the agents and their panels;
+;; the saved window layouts can't restore them, their buffers are gone.
+(defun my/session-resume-agents-a (&rest _)
+  "Resume the agents of the restored workspaces."
+  (my/agent-resume-all))
+
+(advice-add 'doom-load-session :after #'my/session-resume-agents-a)
+
+;; SPC TAB x kills every workspace and buffer, agents included, in one key
+;; press. Unbound; SPC TAB d still kills a single workspace.
+(map! :leader "TAB x" nil)
 
 ;; Save the session without being asked: whenever Emacs has been idle for two
 ;; minutes, on top of persp-mode's own save on exit. A crash or a forgotten
