@@ -331,8 +331,25 @@ Unlike SPC o p, this never falls back to the main checkout."
                   (agent (car (my/agent--session-buffers dir)))
                   ((not (get-buffer-window agent))))
         (ai-code-backends-infra--display-buffer-in-side-window agent))
-      (my/agent-tree)))
+      (my/agent--show-tree)))
   (my/agent-dashboard-show))
+
+(defun my/agent--show-tree ()
+  "Show this workspace's file tree, reusing it (and its open folders) if it exists."
+  (require 'treemacs)
+  (pcase (treemacs-current-visibility)
+    ('visible nil)
+    ('exists (treemacs-select-window))
+    (_ (my/agent-tree))))
+
+;; Saved layouts leave out side windows (see sessions.el), so redraw the
+;; panels whenever a task or home workspace becomes current.
+(defun my/agent-show-panels-h (&optional type)
+  "Show the panels when switching to a workspace that has a checkout."
+  (when (and (eq type 'frame) (my/agent--workspace-dir))
+    (my/agent--show-panels)))
+
+(add-hook 'persp-activated-functions #'my/agent-show-panels-h 90)
 
 (defun my/agent-layout ()
   "Bring back this workspace's agent, file tree and dashboard windows."

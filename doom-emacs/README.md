@@ -78,6 +78,9 @@ Keys differ from stock Magit because of evil.
 - **No popup rule for the dashboard.** The `^\*` catch-all only exists with `(popup +all)`; this config uses `+defaults`.
 - **`--continue`, not ai-code's resume.** ai-code's resume opens a picker per agent. `my/agent-continue-switches` maps each backend to its flag; Claude Code and Pi both use `--continue`.
 - **Handoffs stay in the repo's own `docs/HANDOVER.md`** (agentfiles convention), which works without Emacs. ai-code's handoff and task-resume commands are deliberately unbound.
+- **`SPC TAB x` unbound.** Doom's "Kill session" deletes every workspace and agent in one key press.
+- **Agents resume after every session load** (`SPC q l` too), not only at daemon start.
+- **Layouts are saved without side windows**, and the panels are redrawn on each switch to a task or home workspace. Restoring side windows whose buffers are gone failed and lost the whole layout. Doom popups aren't saved either.
 - **Folder trust**: Claude Code asks once per repo if the repo root is trusted, since worktrees live inside it.
 
 ## Not yet exercised
