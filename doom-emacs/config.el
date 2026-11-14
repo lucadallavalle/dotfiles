@@ -83,13 +83,16 @@
 (setq projectile-project-search-path '("~/dev"))
 
 ;; Org: refiling, TODO keywords, logging
+;; `my/org-todo-keywords' is in functions/org-format.el, loaded here because
+;; this block can run before the loop at the end of this file.
+(load (expand-file-name "functions/org-format.el" doom-user-dir) nil t)
 (after! org
   (setq org-refile-targets '((org-agenda-files :maxlevel . 3)))
   (setq org-refile-use-outline-path 'file)
   (setq org-refile-allow-creating-parent-nodes 'confirm)
   (setq org-log-done 'time)
-  (setq org-todo-keywords '((sequence "TODO(t)" "NEXT(n)" "PROJ(p)" "REPEAT(r)" "STRT(s)" "WAIT(w)" "IDEA(i)" "|" "DONE(d)" "KILL(k)")))
-  (setq org-todo-keywords-for-agenda '((sequence "TODO(t)" "NEXT(n)" "PROJ(p)" "REPEAT(r)" "STRT(s)" "WAIT(w)" "IDEA(i)" "|" "DONE(d)" "KILL(k)")))
+  (setq org-todo-keywords my/org-todo-keywords)
+  (setq org-todo-keywords-for-agenda my/org-todo-keywords)
   (setq org-log-into-drawer 't)
   (setq org-id-link-to-org-use-id 'use-existing)
   (setq org-todo-repeat-to-state 'REPEAT)
