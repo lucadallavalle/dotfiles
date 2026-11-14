@@ -8,6 +8,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 - `config.el`: ai-code setup, Magit worktree section, loads everything in `functions/`.
 - `functions/agents.el`: the `SPC j` commands.
 - `functions/sessions.el`: on the daemon's first frame, restores the last session and resumes all task agents; saves the session when idle.
+- `tests/check.el`: the elisp checks pre-commit runs.
 
 ## Keys
 
@@ -96,4 +97,5 @@ As of 2026-11-11: `SPC j o`, `SPC j s`, `SPC j a`, home workspace resume after a
 - Restart the daemon: `systemctl --user restart emacs`, then `emacsclient -c`. `SPC q q` only closes the frame.
 - The session saves itself after two idle minutes and on exit; `SPC q s` forces a save right now.
 - `doom upgrade` can rebuild `.local` and drop the saved session: bring each task back with `SPC j o`.
-- `doom upgrade` also updates ai-code, whose internal functions `functions/agents.el` relies on: retest `SPC j n`, `SPC j g` and the dashboard afterwards.
+- `doom upgrade` also updates ai-code, whose internal functions `functions/agents.el` relies on. A warning at startup names any that are gone; retest `SPC j n`, `SPC j g` and the dashboard anyway.
+- Commits that touch elisp run `pre-commit run doom-elisp`: every file must read, `functions/` must byte-compile without warnings against the installed Doom and packages, and indentation must match Emacs (fixed in place; stage again).

@@ -25,4 +25,5 @@ Personal dotfiles, symlinked into `$HOME` via [dotbot](https://github.com/anisha
 - Ask before `doom sync`, `doom upgrade`, restarting or killing the daemon, and any `emacsclient -e` that changes windows or workspaces. Reading state is fine.
 - `functions/agents.el` uses internal ai-code functions (unpinned): check the installed source in `~/.config/emacs/.local/straight/repos/ai-code-interface.el/` before relying on one.
 - After each change, say whether it needs a load, `doom sync` or a restart.
+- Gate: `pre-commit run doom-elisp --all-files` passes before any elisp change is committed or loaded into the running Emacs.
 - `main` is protected: branch, PR, squash merge only when told.
