@@ -1,16 +1,6 @@
 ;;; functions/functions.el -*- lexical-binding: t; -*-
 ;;
-;; Org helpers.
-
-(defun my/org-reformat-buffer ()
-  "Rewrite the current Org buffer in Org's canonical formatting.
-Parses the buffer and re-emits it, after asking for confirmation."
-  (interactive)
-  (when (y-or-n-p "Really format current buffer? ")
-    (let ((document (org-element-interpret-data (org-element-parse-buffer))))
-      (erase-buffer)
-      (insert document)
-      (goto-char (point-min)))))
+;; Org helpers. Formatting is in org-format.el.
 
 (defun my/org-add-ids-to-headlines-in-file (&optional all)
   "Add an ID property to each top-level headline that lacks one.
