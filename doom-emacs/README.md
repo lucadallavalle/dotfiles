@@ -85,6 +85,7 @@ Keys differ from stock Magit because of evil.
 - **Agents resume after every session load** (`SPC q l` too), not only at daemon start.
 - **Layouts are saved without side windows**, and the panels are redrawn on each switch to a task or home workspace. Restoring side windows whose buffers are gone failed and lost the whole layout. Doom popups aren't saved either.
 - **Emacs reads the SSH agent's address at load** (`$XDG_RUNTIME_DIR/ssh-agent.env`). The daemon starts without it, so fetch, push and pull from Emacs failed.
+- **`SPC j f` recognises squash merges**, in the main checkout or its fetched upstream. PRs are squash-merged, so the branch's own commits never reach `main`.
 - **Folder trust**: Claude Code asks once per repo if the repo root is trusted, since worktrees live inside it.
 
 ## Not yet exercised

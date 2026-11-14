@@ -300,20 +300,24 @@ buffer."
 
 (my/agent--ssh-env)
 
-(defun my/agent--offer-pull (root)
-  "Offer to pull the main checkout ROOT when its upstream has new commits.
-Never blocks: a failed fetch or pull is reported and the task goes on."
+(defun my/agent--fetch ()
+  "Fetch in `default-directory'; return non-nil on success.
+Fails at once rather than wait for a passphrase or a dead network."
   (my/agent--ssh-env)
-  (let ((default-directory root)
-        ;; Fail at once rather than wait for a passphrase or a dead network.
-        (process-environment
+  (let ((process-environment
          (append '("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=5"
                    "GIT_TERMINAL_PROMPT=0")
                  process-environment)))
+    (message "Fetching...")
+    (zerop (magit-call-git "fetch"))))
+
+(defun my/agent--offer-pull (root)
+  "Offer to pull the main checkout ROOT when its upstream has new commits.
+Never blocks: a failed fetch or pull is reported and the task goes on."
+  (let ((default-directory root))
     (when-let* ((upstream (magit-git-string "rev-parse" "--abbrev-ref"
                                             "--symbolic-full-name" "@{upstream}")))
-      (message "Fetching %s..." upstream)
-      (if (not (zerop (magit-call-git "fetch")))
+      (if (not (my/agent--fetch))
           (progn (message "Couldn't fetch %s; starting from what is here" upstream)
                  (sit-for 1.5))
         (let ((behind (string-to-number
@@ -328,6 +332,21 @@ Never blocks: a failed fetch or pull is reported and the task goes on."
               (message "Couldn't fast-forward (local changes or diverged); pick %s as the start point instead"
                        upstream)
               (sit-for 2))))))))
+
+;; PRs here are squash-merged: the branch's own commits never reach main, so
+;; an ancestry test alone calls every finished task unmerged. A squash is
+;; found by squashing the branch ourselves and looking for the same patch.
+(defun my/agent--merged-p (target &optional rev)
+  "Non-nil if REV (default HEAD) is in TARGET, merged as is or squashed."
+  (let ((rev (or rev "HEAD")))
+    (or (magit-git-success "merge-base" "--is-ancestor" rev target)
+        (when-let* ((base (magit-git-string "merge-base" rev target))
+                    (squashed (magit-git-string "commit-tree"
+                                                (concat rev "^{tree}")
+                                                "-p" base "-m" "squash check"
+                                                "--no-gpg-sign")))
+          (string-prefix-p "-" (or (magit-git-string "cherry" target squashed)
+                                   ""))))))
 
 ;;; Commands
 
@@ -610,7 +629,8 @@ The task file stays in the main repo's .ai.code.files/."
          (default-directory dir)
          (main (my/agent--repo-root))
          (branch (magit-get-current-branch))
-         (workspace (+workspace-current-name)))
+         (workspace (+workspace-current-name))
+         (merged nil))
     (when (file-equal-p dir main)
       (user-error "This is the main checkout, not a task worktree"))
     ;; The linked task file is just a symlink; the real file stays in main.
@@ -623,9 +643,16 @@ The task file stays in the main repo's .ai.code.files/."
         (when changed
           (user-error "Commit or discard first (SPC j g): %s"
                       (string-join changed ", ")))))
-    (let ((main-head (let ((default-directory main)) (magit-rev-parse "HEAD"))))
-      (unless (magit-git-success "merge-base" "--is-ancestor" "HEAD" main-head)
-        (unless (y-or-n-p (format "%s is not merged into the main checkout. Remove anyway? "
+    ;; Merged means: in the main checkout, or in its upstream as last fetched
+    ;; (a PR merged on GitHub that hasn't been pulled yet).
+    (let ((targets (let ((default-directory main))
+                     (my/agent--fetch)
+                     (delq nil (list (magit-rev-parse "HEAD")
+                                     (magit-git-string "rev-parse" "--verify"
+                                                       "--quiet" "@{upstream}"))))))
+      (setq merged (seq-some #'my/agent--merged-p targets))
+      (unless merged
+        (unless (y-or-n-p (format "%s is not merged into the main checkout or its upstream. Remove anyway? "
                                   branch))
           (user-error "Cancelled"))))
     (unless (y-or-n-p (format "Stop the agent and remove worktree %s? " dir))
@@ -638,7 +665,9 @@ The task file stays in the main repo's .ai.code.files/."
       (unless (zerop (magit-call-git "worktree" "remove" dir))
         (user-error "git worktree remove failed; see the *magit-process* buffer"))
       (when (and branch (y-or-n-p (format "Also delete branch %s? " branch)))
-        (unless (zerop (magit-call-git "branch" "-d" branch))
+        ;; Git's own -d refuses a squash-merged branch; force it once we
+        ;; know the work is on main.
+        (unless (zerop (magit-call-git "branch" (if merged "-D" "-d") branch))
           (message "Branch %s not deleted (not fully merged?); use Magit b x" branch))))
     (my/agent--close-workspace workspace)
     (message "Task %s finished" workspace)))
