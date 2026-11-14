@@ -17,3 +17,6 @@ jobs:
       # that every file reads; compile and indentation are checked locally.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends emacs-nox
       - uses: pre-commit/action@v3.0.1
+        env:
+          # This hook refuses commits on main; it would fail the run on main.
+          SKIP: no-commit-to-branch
