@@ -285,6 +285,50 @@ buffer."
         (magit-toplevel))
       (user-error "Can't tell which Git checkout this workspace is for")))
 
+;; The daemon starts without the SSH agent's address, so Git run from Emacs
+;; (the fetch below, Magit's push and pull) can't reach GitHub. Read it from
+;; the file the shell's ssh-agent setup writes.
+(defun my/agent--ssh-env ()
+  "Point Emacs at the running SSH agent."
+  (let ((file (expand-file-name "ssh-agent.env"
+                                (or (getenv "XDG_RUNTIME_DIR") "/nonexistent"))))
+    (when (file-readable-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (when (re-search-forward "SSH_AUTH_SOCK=\\([^;\n]+\\)" nil t)
+          (setenv "SSH_AUTH_SOCK" (match-string 1)))))))
+
+(my/agent--ssh-env)
+
+(defun my/agent--offer-pull (root)
+  "Offer to pull the main checkout ROOT when its upstream has new commits.
+Never blocks: a failed fetch or pull is reported and the task goes on."
+  (my/agent--ssh-env)
+  (let ((default-directory root)
+        ;; Fail at once rather than wait for a passphrase or a dead network.
+        (process-environment
+         (append '("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=5"
+                   "GIT_TERMINAL_PROMPT=0")
+                 process-environment)))
+    (when-let* ((upstream (magit-git-string "rev-parse" "--abbrev-ref"
+                                            "--symbolic-full-name" "@{upstream}")))
+      (message "Fetching %s..." upstream)
+      (if (not (zerop (magit-call-git "fetch")))
+          (progn (message "Couldn't fetch %s; starting from what is here" upstream)
+                 (sit-for 1.5))
+        (let ((behind (string-to-number
+                       (or (magit-git-string "rev-list" "--count"
+                                             (concat "HEAD.." upstream))
+                           "0"))))
+          (when (and (> behind 0)
+                     (y-or-n-p (format "%s is %d commit(s) behind %s. Pull first? "
+                                       (or (magit-get-current-branch) "HEAD")
+                                       behind upstream)))
+            (unless (zerop (magit-call-git "merge" "--ff-only" upstream))
+              (message "Couldn't fast-forward (local changes or diverged); pick %s as the start point instead"
+                       upstream)
+              (sit-for 2))))))))
+
 ;;; Commands
 
 (defun my/agent-task ()
@@ -298,6 +342,7 @@ ai-code task file; describe the task there. The agent opens on the right."
   (let* ((root (my/agent--repo-root))
          (default-directory root)
          (repo (my/agent--repo-name root))
+         (_ (my/agent--offer-pull root))
          (start (magit-read-starting-point "Start task from"))
          (branch (my/agent--read-branch start))
          (workspace (format "%s:%s" repo branch))
