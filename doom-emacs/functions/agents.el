@@ -17,6 +17,7 @@
 ;;   SPC j l  restore the layout (agent, tree, dashboard)
 ;;   SPC j z  zoom the current window, again to restore
 ;;   SPC j r  resume agent here SPC j R  resume agents in all task workspaces
+;;   SPC j p  pick an earlier conversation for this checkout
 ;;   SPC j h  repo home (main checkout, for questions)
 ;;   SPC j s  scratch agent     SPC j a  one-off question, no session
 ;;   SPC j d  sessions dashboard  SPC j j  jump to a workspace
@@ -185,6 +186,23 @@ missing from `my/agent-continue-switches', show its resume picker instead."
 
 (add-hook 'find-file-hook #'my/agent-bind-task-file-h)
 
+;; ai-code cleans up a dead agent by buffer name, so an agent started under a
+;; name that was just freed can be dropped from the session list while it
+;; runs. Put every live agent back before the list is read.
+(defun my/agent-register-missing-a (&rest _)
+  "Add live agent buffers missing from ai-code's session list back to it."
+  (when (fboundp 'ai-code-backends-infra--sync-session-registry)
+    (dolist (buf (buffer-list))
+      (when-let* ((prefix (buffer-local-value
+                           'ai-code-backends-infra--session-prefix buf))
+                  (proc (get-buffer-process buf))
+                  ((process-live-p proc))
+                  ((not (ai-code-session-get buf)))
+                  (dir (ai-code-backends-infra-session-directory buf)))
+        (ai-code-backends-infra--sync-session-registry buf dir prefix)))))
+
+(advice-add 'ai-code-session-refresh :before #'my/agent-register-missing-a)
+
 ;; ai-code never refreshes the dashboard by itself, so do it on a timer while
 ;; it's visible.
 (defvar my/agent-dashboard-refresh-seconds 10
@@ -308,6 +326,29 @@ With prefix FRESH (\\[universal-argument]), start a new conversation instead."
     (if (my/agent--session-buffers dir)
         (message "An agent is already running in %s" dir)
       (my/agent--start-in dir (not fresh)))))
+
+(defun my/agent-pick ()
+  "Pick an earlier conversation for the current workspace's checkout.
+Stops the agent running there first, after asking."
+  (interactive)
+  (require 'ai-code)
+  (let* ((dir (my/agent--current-dir))
+         (running (my/agent--session-buffers dir)))
+    (when running
+      (unless (y-or-n-p "Stop the running agent and pick another conversation? ")
+        (user-error "Cancelled"))
+      ;; The new agent's buffer gets the old one's name, and ai-code cleans up
+      ;; a dead agent by buffer name: let the old ones die first, or the new
+      ;; one is dropped from the dashboard.
+      (let ((procs (delq nil (mapcar #'get-buffer-process running)))
+            (kill-buffer-query-functions nil)
+            (tries 60))
+        (mapc #'kill-buffer running)
+        (while (and (seq-some #'process-live-p procs) (> (cl-decf tries) 0))
+          (accept-process-output nil 0.05))
+        (accept-process-output nil 0.05)))
+    (with-current-buffer (dired-noselect dir)
+      (ai-code-cli-resume))))
 
 (defun my/agent-magit ()
   "Open Magit for the current workspace's checkout.
@@ -435,12 +476,21 @@ Ask with `q' in the ai-code menu, or use plan mode, so it doesn't edit main."
   (let* ((root (my/agent--repo-root))
          (default-directory root)
          (workspace (format "%s:%s" (my/agent--repo-name root)
-                            (or (magit-get-current-branch) "home"))))
-    (+workspace-switch workspace t)
+                            (or (magit-get-current-branch) "home")))
+         ;; Opening a project already made a workspace named after it: turn
+         ;; that one into the home workspace instead of adding a second.
+         (plain (file-name-nondirectory (directory-file-name root)))
+         (reuse (and (not (+workspace-exists-p workspace))
+                     (equal (+workspace-current-name) plain)
+                     (not (my/agent--workspace-dir)))))
+    (if reuse
+        (+workspace-rename plain workspace)
+      (+workspace-switch workspace t))
     (my/agent--set-workspace-dir root)
     (unless (my/agent--session-buffers root)
-      (delete-other-windows)
-      (dired root)
+      (unless reuse
+        (delete-other-windows)
+        (dired root))
       (my/agent--start-in root))
     (my/agent--show-panels)))
 
@@ -556,6 +606,7 @@ Runs in the current project, so the agent can read its files."
        :desc "Zoom window (toggle)"      "z" #'my/zoom-toggle
        :desc "Resume agent here"         "r" #'my/agent-resume
        :desc "Resume all agents"         "R" #'my/agent-resume-all
+       :desc "Pick a past conversation"  "p" #'my/agent-pick
        :desc "Repo home (questions)"     "h" #'my/agent-home
        :desc "Scratch agent"             "s" #'my/agent-scratch
        :desc "Ask once"                  "a" #'my/ask

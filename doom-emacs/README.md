@@ -22,6 +22,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 | `SPC j f` | Finish task (after merging): stop agent, remove worktree      |
 | `SPC j r` | Resume the agent here (`SPC u SPC j r`: fresh conversation)   |
 | `SPC j R` | Resume agents in all task workspaces                          |
+| `SPC j p` | Pick an earlier conversation (stops the running agent)        |
 | `SPC j h` | Workspace + agent on the main checkout, for questions         |
 | `SPC j s` | Scratch agent in `~/scratch`                                  |
 | `SPC j a` | One-off question, no session                                  |
@@ -32,7 +33,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 ## How it works
 
 - Worktrees live at `<repo>/.worktrees/<branch>`. They, `.ai.code.files/` and the task-file links are ignored through `.git/info/exclude`, so nothing of this is ever committed.
-- Workspaces are named `repo:branch`. Each stores its worktree path as a workspace parameter, saved with the session.
+- Workspaces are named `repo:branch`. `SPC j h` in the workspace Doom made when the project was opened renames that one instead of adding a second. Each stores its worktree path as a workspace parameter, saved with the session.
 - Resume continues the latest conversation in the worktree (`--continue`), without a picker.
 - The task file is the prompt notebook: write under a heading, `C-c C-c` sends it to the task's agent. The real file is in the main checkout's `.ai.code.files/`, symlinked into the worktree, so it survives `SPC j f`.
 - `SPC j n`, `SPC j o`, `SPC j h` and the restore open the file tree on the checkout and the dashboard.
@@ -75,6 +76,7 @@ Keys differ from stock Magit because of evil.
 - **`SPC j z` instead of `SPC w m m`.** Agent, tree and dashboard are side windows: `delete-other-windows` keeps them, and refuses to run from one.
 - **Dashboard keys are rebound for evil.** Normal state hides the dashboard's own keys. `RET` is advised to switch workspace rather than pull the agent's buffer into the current one.
 - **Dashboard refresh timer.** ai-code never refreshes it by itself.
+- **Live agents are put back in the session list on every refresh.** ai-code cleans up a dead agent by buffer name and can drop a running one that reused the name.
 - **No popup rule for the dashboard.** The `^\*` catch-all only exists with `(popup +all)`; this config uses `+defaults`.
 - **`--continue`, not ai-code's resume.** ai-code's resume opens a picker per agent. `my/agent-continue-switches` maps each backend to its flag; Claude Code and Pi both use `--continue`.
 - **Handoffs stay in the repo's own `docs/HANDOVER.md`** (agentfiles convention), which works without Emacs. ai-code's handoff and task-resume commands are deliberately unbound.
@@ -85,7 +87,7 @@ Keys differ from stock Magit because of evil.
 
 ## Not yet exercised
 
-As of 2026-11-11: `SPC j o`, `SPC j s`, `SPC j a`, home workspace resume after a restart.
+As of 2026-11-11: `SPC j o`, `SPC j s`, `SPC j a`, home workspace resume after a restart. As of 2026-11-14: `SPC j p`.
 
 ## After changes
 
