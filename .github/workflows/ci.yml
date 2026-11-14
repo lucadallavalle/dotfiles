@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The doom-elisp hook needs Emacs. Without Doom installed it only checks
+      # that every file reads; compile and indentation are checked locally.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends emacs-nox
+      - uses: pre-commit/action@v3.0.1
