@@ -1,11 +1,13 @@
 repos:
   - repo: https://github.com/JohnnyMorganz/StyLua
-    rev: v2.4.1
+    rev: 080c3aa843e9ae6541d9c167ac4f913c5e34730a # v2.4.1
     hooks:
       - id: stylua
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main]
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
@@ -17,7 +19,10 @@ repos:
       - id: check-merge-conflict
       - id: check-toml
       - id: check-yaml
-      - id: detect-private-key
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
   - repo: local
     hooks:
       - id: doom-elisp
