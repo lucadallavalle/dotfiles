@@ -32,6 +32,40 @@
   "Command used by `my/ask'. The question is appended as the last argument.
 For Pi, use \\='(\"pi\" \"-p\").")
 
+;; ai-code is unpinned and most of these are internal: warn at load time when
+;; an upgrade removed one, rather than failing later in the middle of a task.
+(defconst my/agent-ai-code-internals
+  '(ai-code--set-session-project-root
+    ai-code--worktree-create-and-link-task-file
+    ai-code-backends-infra--display-buffer-in-side-window
+    ai-code-backends-infra--sync-session-registry
+    ai-code-backends-infra-session-directory
+    ai-code-cli-resume
+    ai-code-cli-start
+    ai-code-session-buffer
+    ai-code-session-dashboard
+    ai-code-session-dashboard--session-at-point
+    ai-code-session-dashboard-kill-session
+    ai-code-session-dashboard-open-diff
+    ai-code-session-dashboard-refresh
+    ai-code-session-dashboard-visit
+    ai-code-session-get
+    ai-code-session-refresh
+    ai-code-session-repo-root)
+  "The ai-code functions this file calls.")
+
+(defun my/agent-check-internals ()
+  "Warn about functions in `my/agent-ai-code-internals' that no longer exist."
+  (dolist (feature '(ai-code-git ai-code-session ai-code-backends-infra))
+    (require feature nil t))
+  (when-let* ((missing (seq-remove #'fboundp my/agent-ai-code-internals)))
+    (display-warning
+     'my/agent
+     (format "ai-code no longer defines: %s (used in functions/agents.el)"
+             (mapconcat #'symbol-name missing ", ")))))
+
+(after! ai-code (my/agent-check-internals))
+
 ;;; Helpers
 
 (defun my/agent--repo-root ()
@@ -277,7 +311,7 @@ ai-code task file; describe the task there. The agent opens on the right."
     (dired path)
     (my/agent--create-task-file root path branch)
     (delete-other-windows)
-    (if-let ((task (my/agent--task-file path)))
+    (if-let* ((task (my/agent--task-file path)))
         (progn
           ;; The link into the worktree must not be committed either.
           (my/agent--exclude root (concat "/" (file-name-nondirectory task)))
@@ -310,7 +344,7 @@ ai-code task file; describe the task there. The agent opens on the right."
     (+workspace-switch (format "%s:%s" repo branch) t)
     (my/agent--set-workspace-dir path)
     (delete-other-windows)
-    (if-let ((task (my/agent--task-file path)))
+    (if-let* ((task (my/agent--task-file path)))
         (find-file task)
       (dired path))
     (unless (my/agent--session-buffers path)

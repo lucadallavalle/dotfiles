@@ -18,3 +18,11 @@ repos:
       - id: check-toml
       - id: check-yaml
       - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: doom-elisp
+        name: Doom elisp (syntax, byte-compile, indentation)
+        entry: emacs --batch -Q -l doom-emacs/tests/check.el
+        language: system
+        files: ^doom-emacs/.*\.el$
+        pass_filenames: false
