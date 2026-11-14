@@ -619,6 +619,12 @@ dashboard window."
       (when (my/agent--workspace-dir)
         (my/agent--show-panels)))))
 
+(defun my/agent--yes-p (prompt)
+  "Ask PROMPT, yes by default: RET or y is yes, n is no."
+  (let ((read-char-choice-use-read-key t))
+    (memq (read-char-choice (concat prompt " [Y/n] ") '(?y ?Y ?n ?N ?\r))
+          '(?y ?Y ?\r))))
+
 (defun my/agent-finish ()
   "Finish the current task after merging it.
 Stops its agent, removes the worktree and closes the workspace.
@@ -655,7 +661,7 @@ The task file stays in the main repo's .ai.code.files/."
         (unless (y-or-n-p (format "%s is not merged into the main checkout or its upstream. Remove anyway? "
                                   branch))
           (user-error "Cancelled"))))
-    (unless (y-or-n-p (format "Stop the agent and remove worktree %s? " dir))
+    (unless (my/agent--yes-p (format "Stop the agent and remove worktree %s?" dir))
       (user-error "Cancelled"))
     (let ((kill-buffer-query-functions nil))
       (mapc #'kill-buffer (my/agent--session-buffers dir)))
@@ -664,7 +670,7 @@ The task file stays in the main repo's .ai.code.files/."
     (let ((default-directory main))
       (unless (zerop (magit-call-git "worktree" "remove" dir))
         (user-error "git worktree remove failed; see the *magit-process* buffer"))
-      (when (and branch (y-or-n-p (format "Also delete branch %s? " branch)))
+      (when (and branch (my/agent--yes-p (format "Also delete branch %s?" branch)))
         ;; Git's own -d refuses a squash-merged branch; force it once we
         ;; know the work is on main.
         (unless (zerop (magit-call-git "branch" (if merged "-D" "-d") branch))
