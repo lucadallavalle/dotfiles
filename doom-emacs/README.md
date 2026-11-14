@@ -42,7 +42,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 
 ## A task, start to finish
 
-1. `SPC j n` from any file in the repo: pick the start point, name the branch, say `y` to the task file.
+1. `SPC j n` from any file in the repo: it fetches and, if the main checkout is behind, offers to pull; then pick the start point, name the branch, say `y` to the task file.
 2. In the task file, write the request under a heading and press `C-c C-c` on it. Three prompts follow:
    `Code change` (edit files) or `Ask question` (answer only); an instruction line to accept or extend with `RET`; whether the agent appends a summary to the task file.
 3. Review with `SPC j g`. Merge from the main checkout: `SPC j h`, `SPC g g`, `m m`.
@@ -84,6 +84,7 @@ Keys differ from stock Magit because of evil.
 - **`SPC TAB x` unbound.** Doom's "Kill session" deletes every workspace and agent in one key press.
 - **Agents resume after every session load** (`SPC q l` too), not only at daemon start.
 - **Layouts are saved without side windows**, and the panels are redrawn on each switch to a task or home workspace. Restoring side windows whose buffers are gone failed and lost the whole layout. Doom popups aren't saved either.
+- **Emacs reads the SSH agent's address at load** (`$XDG_RUNTIME_DIR/ssh-agent.env`). The daemon starts without it, so fetch, push and pull from Emacs failed.
 - **Folder trust**: Claude Code asks once per repo if the repo root is trusted, since worktrees live inside it.
 
 ## Not yet exercised
