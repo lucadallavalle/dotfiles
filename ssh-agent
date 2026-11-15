@@ -1,11 +1,6 @@
-if ! pgrep -u "$USER" ssh-agent > /dev/null; then
-    ssh-agent -t 12h > "$XDG_RUNTIME_DIR/ssh-agent.env"
+# The agent is the ssh-agent.socket systemd user unit, and SSH_AUTH_SOCK comes
+# from ~/.config/environment.d/. This only covers shells that didn't inherit
+# it (SSH logins, old tmux panes); a forwarded agent is left alone.
+if [[ ! -S "$SSH_AUTH_SOCK" ]]; then
+    export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
 fi
-if [[ ! "$SSH_AUTH_SOCK" ]] || [[ ! -S "$SSH_AUTH_SOCK" ]]; then
-    source "$XDG_RUNTIME_DIR/ssh-agent.env" >/dev/null
-fi
-# Stable symlink so restored tmux panes always find the socket
-if [[ "$SSH_AUTH_SOCK" && -S "$SSH_AUTH_SOCK" && "$SSH_AUTH_SOCK" != "$HOME/.ssh/agent.sock" ]]; then
-    ln -sf "$SSH_AUTH_SOCK" "$HOME/.ssh/agent.sock"
-fi
-export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"

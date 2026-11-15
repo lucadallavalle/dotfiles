@@ -285,25 +285,9 @@ buffer."
         (magit-toplevel))
       (user-error "Can't tell which Git checkout this workspace is for")))
 
-;; The daemon starts without the SSH agent's address, so Git run from Emacs
-;; (the fetch below, Magit's push and pull) can't reach GitHub. Read it from
-;; the file the shell's ssh-agent setup writes.
-(defun my/agent--ssh-env ()
-  "Point Emacs at the running SSH agent."
-  (let ((file (expand-file-name "ssh-agent.env"
-                                (or (getenv "XDG_RUNTIME_DIR") "/nonexistent"))))
-    (when (file-readable-p file)
-      (with-temp-buffer
-        (insert-file-contents file)
-        (when (re-search-forward "SSH_AUTH_SOCK=\\([^;\n]+\\)" nil t)
-          (setenv "SSH_AUTH_SOCK" (match-string 1)))))))
-
-(my/agent--ssh-env)
-
 (defun my/agent--fetch ()
   "Fetch in `default-directory'; return non-nil on success.
 Fails at once rather than wait for a passphrase or a dead network."
-  (my/agent--ssh-env)
   (let ((process-environment
          (append '("GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=5"
                    "GIT_TERMINAL_PROMPT=0")

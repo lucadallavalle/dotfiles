@@ -20,7 +20,8 @@ cd ~/.dotfiles
 | `aliases`, `exports`, `path`   | `~/.aliases`, …                | Shell aliases, environment, `PATH`                            |
 | `p10k.zsh`                     | `~/.p10k.zsh`                  | Prompt theme                                                  |
 | `fzf`, `pnpm`, `ng`, `thefuck` | `~/.fzf`, …                    | Per-tool shell init, each skipped if the tool is missing      |
-| `ssh-agent`                    | `~/.ssh-agent`                 | Starts one shared `ssh-agent` per login                       |
+| `ssh-agent`                    | `~/.ssh-agent`                 | `SSH_AUTH_SOCK` for shells that didn't inherit it             |
+| `environment.d/`, `systemd/`   | `~/.config/environment.d`, …   | `ssh-agent.socket` user unit: session-wide address, 12h keys  |
 | `tmux.conf`                    | `~/.tmux.conf`                 | tmux with tpm plugins                                         |
 | `nvim/`                        | `~/.config/nvim`               | Neovim, plugins managed by lazy.nvim                          |
 | `vimrc`, `ideavimrc`           | `~/.vimrc`, `~/.ideavimrc`     | Vim and JetBrains IdeaVim                                     |
