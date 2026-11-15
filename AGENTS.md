@@ -31,5 +31,5 @@ Personal dotfiles, symlinked into `$HOME` via [dotbot](https://github.com/anisha
 ## Commits
 
 - `main` is protected: branch, PR, squash merge only when told.
-- Commits are SSH-signed with `~/.ssh/id_github`, and so are pushes. Run `source "$XDG_RUNTIME_DIR/ssh-agent.env"` first. Keys expire after 12 hours: if `ssh-add -l` doesn't list the key, a commit hangs; ask the user to run `ssh-add ~/.ssh/id_github`, never skip signing.
+- Commits are SSH-signed with `~/.ssh/id_github`, and so are pushes. The agent is the `ssh-agent.socket` user unit at `$XDG_RUNTIME_DIR/ssh-agent.socket`; `SSH_AUTH_SOCK` is set session-wide. Keys expire after 12 hours: if `ssh-add -l` doesn't list the key, a commit hangs; ask the user to run `ssh-add ~/.ssh/id_github`, never skip signing.
 - In an agent's shell, `pre-commit` is `~/.local/bin/pre-commit`, and `emacs` is an alias for emacsclient: use `/usr/bin/emacs` for batch runs.
