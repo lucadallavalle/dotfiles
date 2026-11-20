@@ -17,6 +17,7 @@
 ;;   SPC j l  restore the layout (agent, tree, dashboard)
 ;;   SPC j z  zoom the current window, again to restore
 ;;   SPC j r  resume agent here SPC j R  resume agents in all task workspaces
+;;   SPC j k  restart the agent here
 ;;   SPC j p  pick an earlier conversation for this checkout
 ;;   SPC j h  repo home (main checkout, for questions)
 ;;   SPC j s  scratch agent     SPC j a  one-off question, no session
@@ -39,6 +40,7 @@ For Pi, use \\='(\"pi\" \"-p\").")
     ai-code--worktree-create-and-link-task-file
     ai-code-backends-infra--display-buffer-in-side-window
     ai-code-backends-infra--sync-session-registry
+    ai-code-backends-infra--toggle-or-create-session
     ai-code-backends-infra-session-directory
     ai-code-cli-resume
     ai-code-cli-start
@@ -145,8 +147,8 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
           (sit-for 1))))
     name))
 
-(defun my/agent--session-buffers (dir)
-  "Return live ai-code agent buffers whose session is rooted at DIR."
+(defun my/agent--buffers (dir live)
+  "Return the ai-code agent buffers rooted at DIR that are LIVE, or exited."
   (let ((target (file-name-as-directory (file-truename dir))))
     (cl-remove-if-not
      (lambda (buf)
@@ -155,12 +157,27 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
        ;; `default-directory', and the real agent is then never started.
        (when-let* (((buffer-local-value
                      'ai-code-backends-infra--session-prefix buf))
-                   (proc (get-buffer-process buf))
-                   ((process-live-p proc))
+                   ((eq (not live)
+                        (not (process-live-p (get-buffer-process buf)))))
                    (owner (ignore-errors
                             (ai-code-backends-infra-session-directory buf))))
          (string= (file-name-as-directory (file-truename owner)) target)))
      (buffer-list))))
+
+(defun my/agent--session-buffers (dir)
+  "Return live ai-code agent buffers whose session is rooted at DIR."
+  (my/agent--buffers dir t))
+
+;; ai-code keeps the terminal of an agent that exited with an error and
+;; counts it as a running one: the next start asks for an instance name, and
+;; vterm names the new terminal NAME<2> while ai-code tracks NAME.
+(defun my/agent-clear-dead-buffers-a (working-dir &rest _)
+  "Kill the buffers of exited agents in WORKING-DIR before one starts there."
+  (let ((kill-buffer-query-functions nil))
+    (mapc #'kill-buffer (my/agent--buffers working-dir nil))))
+
+(advice-add 'ai-code-backends-infra--toggle-or-create-session
+            :before #'my/agent-clear-dead-buffers-a)
 
 (defvar my/agent-continue-switches
   '((claude-code ai-code-claude-code-program-switches "--continue")
@@ -168,17 +185,79 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
   "How each backend continues the latest conversation in a directory.
 Each entry is (BACKEND SWITCHES-VARIABLE FLAG); FLAG skips the picker.")
 
-(defun my/agent--start-in (dir &optional resume)
-  "Start an agent rooted at DIR.
-With RESUME, continue the most recent conversation in DIR; for a backend
+(defvar my/agent-start-wait 3
+  "Seconds a continued agent must stay alive to count as started.
+Claude Code takes about 1.6 to give up on --continue.")
+
+;; In Claude Code, left arrow on an empty prompt opens the agent view and
+;; moves the conversation to a background session. That session outlives
+;; the terminal, and --continue then exits at once.
+(defun my/agent--stop-background (dir)
+  "Stop Claude Code's background sessions in DIR; they block --continue.
+Their conversations are kept."
+  (when (eq ai-code-selected-backend 'claude-code)
+    (let ((claude (bound-and-true-p ai-code-claude-code-program))
+          (target (file-name-as-directory (file-truename dir))))
+      (dolist (session (ignore-errors
+                         (with-temp-buffer
+                           (call-process claude nil '(t nil) nil
+                                         "agents" "--json" "--cwd" target)
+                           (goto-char (point-min))
+                           (json-parse-buffer :object-type 'alist
+                                              :array-type 'list))))
+        (let-alist session
+          (when (and (equal .kind "background") .id .cwd
+                     (string= (file-name-as-directory (file-truename .cwd))
+                              target))
+            (message "Stopping background session %s (%s)" .id .name)
+            (call-process claude nil nil nil "stop" .id)))))))
+
+(defun my/agent--launch (dir continue)
+  "Start an agent rooted at DIR, without checking that it stays up.
+With CONTINUE, continue the most recent conversation in DIR; for a backend
 missing from `my/agent-continue-switches', show its resume picker instead."
   (with-current-buffer (dired-noselect dir)
-    (pcase (and resume
+    (pcase (and continue
                 (alist-get ai-code-selected-backend my/agent-continue-switches))
       ((and `(,var ,flag) (guard (boundp var)))
        (cl-progv (list var) (list (append (symbol-value var) (list flag)))
          (ai-code-cli-start)))
-      (_ (if resume (ai-code-cli-resume) (ai-code-cli-start))))))
+      (_ (if continue (ai-code-cli-resume) (ai-code-cli-start))))))
+
+(defun my/agent--await (dirs)
+  "Wait `my/agent-start-wait' seconds; return the DIRS left without an agent."
+  (let ((deadline (+ (float-time) my/agent-start-wait))
+        failed)
+    ;; Stop early only once every one of them has exited.
+    (while (and (< (length (setq failed (seq-remove #'my/agent--session-buffers
+                                                    dirs)))
+                   (length dirs))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.1))
+    failed))
+
+(defun my/agent--launch-fresh (dir)
+  "Start a new conversation in DIR after continuing one there failed."
+  (let ((why (when-let* ((dead (car (my/agent--buffers dir nil))))
+               (with-current-buffer dead
+                 (string-trim (buffer-substring-no-properties
+                               (point-min) (min (point-max) 200)))))))
+    (my/agent--launch dir nil)
+    (unless (my/agent--session-buffers dir)
+      (user-error "The agent didn't start in %s" dir))
+    (message "New conversation in %s: %s" dir
+             (if (or (null why) (string-empty-p why)) "continuing failed" why))))
+
+(defun my/agent--start-in (dir &optional resume)
+  "Start an agent rooted at DIR.
+With RESUME, continue the most recent conversation in DIR, or start a new
+one when that fails."
+  (when resume (my/agent--stop-background dir))
+  (my/agent--launch dir resume)
+  (cond ((and resume (my/agent--await (list dir)))
+         (my/agent--launch-fresh dir))
+        ((not (my/agent--session-buffers dir))
+         (user-error "The agent didn't start in %s" dir))))
 
 (defun my/agent-dashboard-show ()
   "Show and refresh the sessions dashboard here, without selecting it."
@@ -414,6 +493,33 @@ With prefix FRESH (\\[universal-argument]), start a new conversation instead."
         (message "An agent is already running in %s" dir)
       (my/agent--start-in dir (not fresh)))))
 
+(defun my/agent--stop (buffers)
+  "Kill the agent BUFFERS and wait until their processes are gone.
+A new agent's buffer gets the old one's name, and ai-code cleans up a dead
+agent by buffer name: started too early, the new one is dropped from the
+dashboard."
+  (let ((procs (delq nil (mapcar #'get-buffer-process buffers)))
+        (kill-buffer-query-functions nil)
+        (tries 60))
+    (mapc #'kill-buffer buffers)
+    (while (and (seq-some #'process-live-p procs) (> (cl-decf tries) 0))
+      (accept-process-output nil 0.05))
+    (accept-process-output nil 0.05)))
+
+(defun my/agent-restart (&optional fresh)
+  "Restart the agent for the current workspace's checkout, after asking.
+The conversation is continued; with prefix FRESH (\\[universal-argument]),
+a new one is started instead."
+  (interactive "P")
+  (require 'ai-code)
+  (let* ((dir (my/agent--current-dir))
+         (running (my/agent--session-buffers dir)))
+    (when running
+      (unless (my/agent--yes-p (format "Restart the agent in %s?" dir))
+        (user-error "Cancelled"))
+      (my/agent--stop running))
+    (my/agent--start-in dir (not fresh))))
+
 (defun my/agent-pick ()
   "Pick an earlier conversation for the current workspace's checkout.
 Stops the agent running there first, after asking."
@@ -424,16 +530,7 @@ Stops the agent running there first, after asking."
     (when running
       (unless (y-or-n-p "Stop the running agent and pick another conversation? ")
         (user-error "Cancelled"))
-      ;; The new agent's buffer gets the old one's name, and ai-code cleans up
-      ;; a dead agent by buffer name: let the old ones die first, or the new
-      ;; one is dropped from the dashboard.
-      (let ((procs (delq nil (mapcar #'get-buffer-process running)))
-            (kill-buffer-query-functions nil)
-            (tries 60))
-        (mapc #'kill-buffer running)
-        (while (and (seq-some #'process-live-p procs) (> (cl-decf tries) 0))
-          (accept-process-output nil 0.05))
-        (accept-process-output nil 0.05)))
+      (my/agent--stop running))
     (with-current-buffer (dired-noselect dir)
       (ai-code-cli-resume))))
 
@@ -539,20 +636,34 @@ Runs after a session restore. The scratch workspace is skipped."
   (interactive)
   (require 'ai-code)
   (let ((origin (+workspace-current-name))
-        (count 0))
+        started skipped)
     (dolist (name (+workspace-list-names))
       (when-let* ((dir (my/agent--workspace-dir name))
                   ((file-directory-p dir)))
         (+workspace-switch name)
-        (condition-case err
+        (condition-case nil
             (progn
               (unless (my/agent--session-buffers dir)
-                (my/agent--start-in dir t)
-                (cl-incf count))
+                (my/agent--stop-background dir)
+                (my/agent--launch dir t)
+                (push (cons name dir) started))
               (my/agent--show-panels))
-          (error (message "Skipped %s: %s" name (error-message-string err))))))
+          (error (push name skipped)))))
+    ;; One wait for all of them, then a new conversation wherever continuing
+    ;; failed.
+    (dolist (dir (my/agent--await (mapcar #'cdr started)))
+      (let ((name (car (rassoc dir started))))
+        (+workspace-switch name)
+        (condition-case nil
+            (progn (my/agent--launch-fresh dir)
+                   (my/agent--show-panels))
+          (error (push name skipped)
+                 (setq started (rassq-delete-all dir started))))))
     (+workspace-switch origin)
-    (message "Resumed %d agent(s)" count)))
+    (message "Resumed %d agent(s)%s" (length started)
+             (if skipped
+                 (format "; failed: %s" (string-join (nreverse skipped) ", "))
+               ""))))
 
 (defun my/agent-home ()
   "Open the repo's home workspace (main checkout) with an agent for questions.
@@ -709,6 +820,7 @@ Runs in the current project, so the agent can read its files."
        :desc "Zoom window (toggle)"      "z" #'my/zoom-toggle
        :desc "Resume agent here"         "r" #'my/agent-resume
        :desc "Resume all agents"         "R" #'my/agent-resume-all
+       :desc "Restart agent here"        "k" #'my/agent-restart
        :desc "Pick a past conversation"  "p" #'my/agent-pick
        :desc "Repo home (questions)"     "h" #'my/agent-home
        :desc "Scratch agent"             "s" #'my/agent-scratch
