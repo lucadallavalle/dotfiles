@@ -23,6 +23,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 | `SPC j f` | Finish task (after merging): stop agent, remove worktree      |
 | `SPC j r` | Resume the agent here (`SPC u SPC j r`: fresh conversation)   |
 | `SPC j R` | Resume agents in all task workspaces                          |
+| `SPC j k` | Restart the agent here (`SPC u SPC j k`: fresh conversation)  |
 | `SPC j p` | Pick an earlier conversation (stops the running agent)        |
 | `SPC j h` | Workspace + agent on the main checkout, for questions         |
 | `SPC j s` | Scratch agent in `~/scratch`                                  |
@@ -80,6 +81,9 @@ Keys differ from stock Magit because of evil.
 - **Live agents are put back in the session list on every refresh.** ai-code cleans up a dead agent by buffer name and can drop a running one that reused the name.
 - **No popup rule for the dashboard.** The `^\*` catch-all only exists with `(popup +all)`; this config uses `+defaults`.
 - **`--continue`, not ai-code's resume.** ai-code's resume opens a picker per agent. `my/agent-continue-switches` maps each backend to its flag; Claude Code and Pi both use `--continue`.
+- **A continue that fails falls back to a new conversation.** `--continue` exits when the checkout has no conversation yet; the start waits 3 seconds to see it. `SPC j R` waits once for all agents.
+- **Background sessions are stopped before a continue** (`claude stop`, conversation kept). In Claude Code, `←` on an empty prompt opens the agent view and moves the conversation to a background session, which outlives the terminal and makes `--continue` exit.
+- **An exited agent's buffer is killed before the next start.** ai-code keeps it to show the error and counts it as running: the next start would ask for an instance name.
 - **Handoffs stay in the repo's own `docs/HANDOVER.md`** (agentfiles convention), which works without Emacs. ai-code's handoff and task-resume commands are deliberately unbound.
 - **`SPC TAB x` unbound.** Doom's "Kill session" deletes every workspace and agent in one key press.
 - **Agents resume after every session load** (`SPC q l` too), not only at daemon start.
