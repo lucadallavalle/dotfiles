@@ -150,7 +150,12 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
   (let ((target (file-name-as-directory (file-truename dir))))
     (cl-remove-if-not
      (lambda (buf)
-       (when-let* ((proc (get-buffer-process buf))
+       ;; Only agents have a session prefix. Without this test any buffer
+       ;; with a process in DIR passes for one: ai-code falls back to
+       ;; `default-directory', and the real agent is then never started.
+       (when-let* (((buffer-local-value
+                     'ai-code-backends-infra--session-prefix buf))
+                   (proc (get-buffer-process buf))
                    ((process-live-p proc))
                    (owner (ignore-errors
                             (ai-code-backends-infra-session-directory buf))))
