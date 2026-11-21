@@ -16,8 +16,8 @@
 ;;   SPC j e  file tree for this task's worktree
 ;;   SPC j l  restore the layout (agent, tree, dashboard)
 ;;   SPC j z  zoom the current window, again to restore
-;;   SPC j r  resume agent here SPC j R  resume agents in all task workspaces
-;;   SPC j k  restart the agent here
+;;   SPC j r  resume agent here, or restart the one running
+;;   SPC j R  resume agents in all task workspaces
 ;;   SPC j p  pick an earlier conversation for this checkout
 ;;   SPC j h  repo home (main checkout, for questions)
 ;;   SPC j s  scratch agent     SPC j a  one-off question, no session
@@ -483,16 +483,6 @@ ai-code task file; describe the task there. The agent opens on the right."
       (my/agent--start-in path t))
     (my/agent--show-panels)))
 
-(defun my/agent-resume (&optional fresh)
-  "Resume the agent for the current workspace's checkout.
-With prefix FRESH (\\[universal-argument]), start a new conversation instead."
-  (interactive "P")
-  (require 'ai-code)
-  (let ((dir (my/agent--current-dir)))
-    (if (my/agent--session-buffers dir)
-        (message "An agent is already running in %s" dir)
-      (my/agent--start-in dir (not fresh)))))
-
 (defun my/agent--stop (buffers)
   "Kill the agent BUFFERS and wait until their processes are gone.
 A new agent's buffer gets the old one's name, and ai-code cleans up a dead
@@ -506,10 +496,11 @@ dashboard."
       (accept-process-output nil 0.05))
     (accept-process-output nil 0.05)))
 
-(defun my/agent-restart (&optional fresh)
-  "Restart the agent for the current workspace's checkout, after asking.
-The conversation is continued; with prefix FRESH (\\[universal-argument]),
-a new one is started instead."
+(defun my/agent-resume (&optional fresh)
+  "Start the agent for the current workspace's checkout.
+One already running there is restarted, after asking. The conversation is
+continued; with prefix FRESH (\\[universal-argument]), a new one is started
+instead."
   (interactive "P")
   (require 'ai-code)
   (let* ((dir (my/agent--current-dir))
@@ -828,9 +819,8 @@ Runs in the current project, so the agent can read its files."
        :desc "File tree for this task"   "e" #'my/agent-tree
        :desc "Restore task layout"       "l" #'my/agent-layout
        :desc "Zoom window (toggle)"      "z" #'my/zoom-toggle
-       :desc "Resume agent here"         "r" #'my/agent-resume
+       :desc "Resume or restart agent"   "r" #'my/agent-resume
        :desc "Resume all agents"         "R" #'my/agent-resume-all
-       :desc "Restart agent here"        "k" #'my/agent-restart
        :desc "Pick a past conversation"  "p" #'my/agent-pick
        :desc "Repo home (questions)"     "h" #'my/agent-home
        :desc "Scratch agent"             "s" #'my/agent-scratch

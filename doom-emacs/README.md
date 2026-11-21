@@ -21,9 +21,8 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 | `SPC j l` | Restore the layout: agent, file tree, dashboard               |
 | `SPC j z` | Zoom the current window full frame; again to restore          |
 | `SPC j f` | Finish task (after merging): stop agent, remove worktree      |
-| `SPC j r` | Resume the agent here (`SPC u SPC j r`: fresh conversation)   |
+| `SPC j r` | Resume the agent here, or restart the running one (`SPC u SPC j r`: fresh conversation) |
 | `SPC j R` | Resume agents in all task workspaces                          |
-| `SPC j k` | Restart the agent here (`SPC u SPC j k`: fresh conversation)  |
 | `SPC j p` | Pick an earlier conversation (stops the running agent)        |
 | `SPC j h` | Workspace + agent on the main checkout, for questions         |
 | `SPC j s` | Scratch agent in `~/scratch`                                  |
