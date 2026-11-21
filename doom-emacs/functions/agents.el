@@ -531,6 +531,9 @@ Stops the agent running there first, after asking."
       (unless (y-or-n-p "Stop the running agent and pick another conversation? ")
         (user-error "Cancelled"))
       (my/agent--stop running))
+    ;; Picking a conversation that is still a background session makes
+    ;; Claude Code exit, and the terminal closes.
+    (my/agent--stop-background dir)
     (with-current-buffer (dired-noselect dir)
       (ai-code-cli-resume))))
 
