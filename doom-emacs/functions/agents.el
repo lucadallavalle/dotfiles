@@ -570,6 +570,13 @@ Unlike SPC o p, this never falls back to the main checkout."
     ('exists (treemacs-select-window))
     (_ (my/agent-tree))))
 
+;; Treemacs keeps the tree of a finished task, and asks what to do about the
+;; missing worktree the next time it loads: in the middle of the session
+;; restore. Quitting that prompt ends the restore before the agents are
+;; resumed. Drop such a tree without asking.
+(defvar treemacs-missing-project-action)
+(setq treemacs-missing-project-action 'remove)
+
 ;; Saved layouts leave out side windows (see sessions.el), so redraw the
 ;; panels whenever a task or home workspace becomes current.
 (defun my/agent-show-panels-h (&optional type)
