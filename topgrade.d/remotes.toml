@@ -1,0 +1,3 @@
+# Laptop only (linked by install.conf.yaml): servers upgraded from this machine.
+[misc]
+remote_topgrades = ["hetz", "mfhetz"]
