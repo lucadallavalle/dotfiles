@@ -12,6 +12,8 @@ cd ~/.dotfiles
 
 `./install` fetches dotbot (a submodule) and creates the links listed in `install.conf.yaml`. It is safe to re-run.
 
+On a server, clone over HTTPS and run `DOTFILES_CONFIG=install.server.conf.yaml ./install`: shell, tmux with the default prefix, and Neovim without plugins.
+
 ## What's inside
 
 | Path                           | Linked to                      | What                                                          |
