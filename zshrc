@@ -9,7 +9,9 @@ ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="powerlevel10k/powerlevel10k"
 plugins=(git zsh-autosuggestions tmux)
 
-ZSH_TMUX_AUTOSTART=true
+# Not when zsh only runs a command (zsh -i -c, e.g. topgrade):
+# tmux would take over instead
+[[ -z "$ZSH_EXECUTION_STRING" ]] && ZSH_TMUX_AUTOSTART=true
 
 ZSH_CACHE_DIR=$HOME/.cache/oh-my-zsh
 if [[ ! -d $ZSH_CACHE_DIR ]]; then
