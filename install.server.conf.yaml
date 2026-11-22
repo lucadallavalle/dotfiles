@@ -1,0 +1,19 @@
+# Headless servers: shell, tmux and an editor without plugins.
+- defaults:
+    link:
+      relink: true
+      create: true
+
+- clean: ["~"]
+
+- link:
+    ~/.aliases: aliases
+    ~/.exports: exports
+    ~/.p10k.zsh: p10k.zsh
+    ~/.path: path
+    ~/.zshrc: zshrc
+    ~/.tmux.conf: tmux.conf
+    ~/.tmux.local.conf: tmux.server.conf
+    ~/.vimrc: vimrc
+    ~/.config/nvim: nvim-server
+    ~/.config/topgrade.toml: topgrade.toml

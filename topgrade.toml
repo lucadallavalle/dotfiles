@@ -1,5 +1,5 @@
 [misc]
-disable = ["pip3", "vscode", "vscodium", "emacs", "lensfun"]
+disable = ["pip3", "vscode", "vscodium", "emacs", "lensfun", "containers"]
 no_self_update = true
 
 [linux]
