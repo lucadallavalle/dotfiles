@@ -35,7 +35,7 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 
 - Worktrees live at `<repo>/.worktrees/<branch>`. They, `.ai.code.files/` and the task-file links are ignored through `.git/info/exclude`, so nothing of this is ever committed.
 - Workspaces are named `repo:branch`. `SPC j h` in the workspace Doom made when the project was opened renames that one instead of adding a second. Each stores its worktree path as a workspace parameter, saved with the session.
-- Resume continues the latest conversation in the worktree (`--continue`), without a picker.
+- Resume continues the workspace's own conversation (`--resume <id>`), without a picker; with none recorded yet, the latest in the checkout (`--continue`).
 - The task file is the prompt notebook: write under a heading, `C-c C-c` sends it to the task's agent. The real file is in the main checkout's `.ai.code.files/`, symlinked into the worktree, so it survives `SPC j f`.
 - `SPC j n`, `SPC j o`, `SPC j h` and the restore open the file tree on the checkout and the dashboard.
 - The dashboard refreshes every 10 seconds while visible. In it: `RET` jumps to the session's workspace, `g r` refreshes, `x` kills the session, `D` opens Magit, `q` hides it.
@@ -79,9 +79,11 @@ Keys differ from stock Magit because of evil.
 - **Dashboard refresh timer.** ai-code never refreshes it by itself.
 - **Live agents are put back in the session list on every refresh.** ai-code cleans up a dead agent by buffer name and can drop a running one that reused the name.
 - **No popup rule for the dashboard.** The `^\*` catch-all only exists with `(popup +all)`; this config uses `+defaults`.
-- **`--continue`, not ai-code's resume.** ai-code's resume opens a picker per agent. `my/agent-continue-switches` maps each backend to its flag; Claude Code and Pi both use `--continue`.
-- **A continue that fails falls back to a new conversation.** `--continue` exits when the checkout has no conversation yet; the start waits 3 seconds to see it. `SPC j R` waits once for all agents.
-- **Background sessions are stopped before a continue** (`claude stop`, conversation kept). In Claude Code, `←` on an empty prompt opens the agent view and moves the conversation to a background session, which outlives the terminal and makes `--continue` exit.
+- **`--continue`, not ai-code's resume.** ai-code's resume opens a picker per agent.
+- **Each workspace records its conversation id** (saved with the session, refreshed when idle) and resumes that one. `--continue` alone takes the newest conversation in the directory, e.g. one run from a terminal there.
+- **Backend specifics live in `my/agent-backend-specs`**: flags, how to read a running agent's conversation id, what to do before a continue. A backend without an entry uses ai-code's picker; without an id lookup, `--continue`.
+- **A continue that fails falls back to a new conversation.** `--continue` exits when the checkout has no conversation yet, `--resume` when the id is gone; the start waits 3 seconds to see it. `SPC j R` waits once for all agents.
+- **Background sessions are stopped before a `--continue` or a pick** (`claude stop`, conversation kept), not before `--resume <id>`: there they are copies with their own ids, possibly still working. In Claude Code, `←` on an empty prompt opens the agent view and moves the conversation to a background session, which outlives the terminal and makes `--continue` exit.
 - **An exited agent's buffer is killed before the next start.** ai-code keeps it to show the error and counts it as running: the next start would ask for an instance name.
 - **Handoffs stay in the repo's own `docs/HANDOVER.md`** (agentfiles convention), which works without Emacs. ai-code's handoff and task-resume commands are deliberately unbound.
 - **`SPC TAB x` unbound.** Doom's "Kill session" deletes every workspace and agent in one key press.
@@ -93,6 +95,8 @@ Keys differ from stock Magit because of evil.
 ## Not yet exercised
 
 As of 2026-11-11: `SPC j o`, `SPC j s`, `SPC j a`, home workspace resume after a restart. As of 2026-11-14: `SPC j p`.
+
+As of 2026-11-24, `SPC j p` once opened an extra Emacs frame; not reproduced since.
 
 ## After changes
 
