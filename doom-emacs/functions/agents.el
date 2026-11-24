@@ -179,50 +179,150 @@ The real file lives in ROOT/.ai.code.files/ so it outlives the worktree."
 (advice-add 'ai-code-backends-infra--toggle-or-create-session
             :before #'my/agent-clear-dead-buffers-a)
 
-(defvar my/agent-continue-switches
-  '((claude-code ai-code-claude-code-program-switches "--continue")
-    (pi ai-code-pi-program-switches "--continue"))
-  "How each backend continues the latest conversation in a directory.
-Each entry is (BACKEND SWITCHES-VARIABLE FLAG); FLAG skips the picker.")
+;; Everything that depends on the backend is in this table, so moving to
+;; another one means adding an entry. Without an entry, or without a key,
+;; the generic behaviour applies (noted per key).
+(defvar my/agent-backend-specs
+  '((claude-code
+     :switches ai-code-claude-code-program-switches
+     :continue ("--continue")
+     :resume ("--resume" "%s")
+     :conversations my/agent--claude-conversations
+     :before-continue my/agent--claude-stop-background)
+    (pi
+     :switches ai-code-pi-program-switches
+     :continue ("--continue")))
+  "How each ai-code backend continues a conversation without its picker.
+Each entry is (BACKEND . PLIST):
+  :switches         variable holding the CLI's switches.
+  :continue         switches continuing the newest conversation in the
+                    directory; none: ai-code's resume picker.
+  :resume           switches resuming one conversation, %s being its id;
+                    none: :continue.
+  :conversations    function returning ((PID . ID) ...) for the running
+                    agents; none: conversations aren't recorded.
+  :before-continue  function called with the directory before continuing
+                    its newest conversation, or picking one.")
+
+(defun my/agent--backend (key)
+  "Return KEY of the selected backend's entry in `my/agent-backend-specs'."
+  (plist-get (alist-get ai-code-selected-backend my/agent-backend-specs) key))
 
 (defvar my/agent-start-wait 3
   "Seconds a continued agent must stay alive to count as started.
-Claude Code takes about 1.6 to give up on --continue.")
+Claude Code takes about 1.6 to give up on --continue or a missing --resume.")
+
+;;;; Claude Code
+
+(defun my/agent--claude-sessions (&rest args)
+  "Return Claude Code's live sessions as alists; ARGS go to `claude agents'."
+  (ignore-errors
+    (with-temp-buffer
+      (apply #'call-process (bound-and-true-p ai-code-claude-code-program)
+             nil '(t nil) nil "agents" "--json" args)
+      (goto-char (point-min))
+      (json-parse-buffer :object-type 'alist :array-type 'list))))
+
+(defun my/agent--claude-conversations ()
+  "Return ((PID . SESSION-ID) ...) for the running Claude Code sessions."
+  (delq nil (mapcar (lambda (s) (let-alist s
+                                  (and .pid .sessionId (cons .pid .sessionId))))
+                    (my/agent--claude-sessions))))
 
 ;; In Claude Code, left arrow on an empty prompt opens the agent view and
 ;; moves the conversation to a background session. That session outlives
 ;; the terminal, and --continue then exits at once.
-(defun my/agent--stop-background (dir)
+(defun my/agent--claude-stop-background (dir)
   "Stop Claude Code's background sessions in DIR; they block --continue.
 Their conversations are kept."
-  (when (eq ai-code-selected-backend 'claude-code)
-    (let ((claude (bound-and-true-p ai-code-claude-code-program))
-          (target (file-name-as-directory (file-truename dir))))
-      (dolist (session (ignore-errors
-                         (with-temp-buffer
-                           (call-process claude nil '(t nil) nil
-                                         "agents" "--json" "--cwd" target)
-                           (goto-char (point-min))
-                           (json-parse-buffer :object-type 'alist
-                                              :array-type 'list))))
-        (let-alist session
-          (when (and (equal .kind "background") .id .cwd
-                     (string= (file-name-as-directory (file-truename .cwd))
-                              target))
-            (message "Stopping background session %s (%s)" .id .name)
-            (call-process claude nil nil nil "stop" .id)))))))
+  (let ((target (file-name-as-directory (file-truename dir))))
+    (dolist (session (my/agent--claude-sessions "--cwd" target))
+      (let-alist session
+        (when (and (equal .kind "background") .id .cwd
+                   (string= (file-name-as-directory (file-truename .cwd))
+                            target))
+          (message "Stopping background session %s (%s)" .id .name)
+          (call-process (bound-and-true-p ai-code-claude-code-program)
+                        nil nil nil "stop" .id))))))
+
+;;;; Conversations
+
+(defun my/agent--before-continue (dir)
+  "Prepare DIR for continuing a conversation, as the backend needs."
+  (when-let* ((fn (my/agent--backend :before-continue)))
+    (funcall fn dir)))
+
+;; Continuing takes the newest conversation in the directory, wherever it
+;; ran: a chat opened in a terminal there, or one picked in another agent,
+;; would replace the workspace's own after a restart. Each workspace
+;; therefore records the conversation its agent runs, and resumes that one.
+(defun my/agent--running-conversation (dir &optional conversations)
+  "Return (BACKEND . ID) of the conversation the agent in DIR runs, or nil.
+CONVERSATIONS is the backend's ((PID . ID) ...), fetched if nil."
+  (when-let* ((fn (my/agent--backend :conversations))
+              (buf (car (my/agent--session-buffers dir)))
+              (pid (process-id (get-buffer-process buf)))
+              (id (alist-get pid (or conversations (funcall fn)))))
+    (cons ai-code-selected-backend id)))
+
+(defun my/agent-record-conversations (&rest _)
+  "Record on each workspace the conversation its agent runs.
+Saved with the session; a workspace whose agent isn't running keeps the
+conversation recorded before."
+  (when-let* ((fn (my/agent--backend :conversations))
+              (conversations (funcall fn)))
+    (dolist (persp (delq nil (persp-persps)))
+      (when-let* ((dir (persp-parameter 'my/agent-dir persp))
+                  (conversation (my/agent--running-conversation
+                                 dir conversations)))
+        (set-persp-parameter 'my/agent-conversation conversation persp)))))
+
+(add-hook 'persp-before-save-state-to-file-functions
+          #'my/agent-record-conversations)
+
+;; `systemctl --user stop emacs' signals the agents together with Emacs, so
+;; they can be gone when the session is saved on exit: keep the record fresh.
+(defvar my/agent-record-timer nil)
+
+(when (timerp my/agent-record-timer)
+  (cancel-timer my/agent-record-timer))
+(setq my/agent-record-timer
+      (run-with-idle-timer 15 t #'my/agent-record-conversations))
+
+(defun my/agent--conversation (dir &optional workspace)
+  "Return what to resume in DIR: the id of the conversation its agent runs,
+else the one recorded on WORKSPACE (default: current) by the same backend,
+else t (the newest in DIR)."
+  (let ((recorded (when-let* ((persp (if workspace (persp-get-by-name workspace)
+                                       (get-current-persp)))
+                              ((perspective-p persp)))
+                    (persp-parameter 'my/agent-conversation persp))))
+    (or (cdr (my/agent--running-conversation dir))
+        (and (consp recorded)
+             (eq (car recorded) ai-code-selected-backend)
+             (cdr recorded))
+        t)))
 
 (defun my/agent--launch (dir continue)
   "Start an agent rooted at DIR, without checking that it stays up.
-With CONTINUE, continue the most recent conversation in DIR; for a backend
-missing from `my/agent-continue-switches', show its resume picker instead."
+CONTINUE t continues the newest conversation in DIR; a string resumes the
+conversation with that id. See `my/agent-backend-specs'."
   (with-current-buffer (dired-noselect dir)
-    (pcase (and continue
-                (alist-get ai-code-selected-backend my/agent-continue-switches))
-      ((and `(,var ,flag) (guard (boundp var)))
-       (cl-progv (list var) (list (append (symbol-value var) (list flag)))
-         (ai-code-cli-start)))
-      (_ (if continue (ai-code-cli-resume) (ai-code-cli-start))))))
+    (let ((var (my/agent--backend :switches))
+          (args (when continue
+                  (if-let* (((stringp continue))
+                            (resume (my/agent--backend :resume)))
+                      (mapcar (lambda (a) (format a continue)) resume)
+                    (my/agent--backend :continue)))))
+      ;; A conversation resumed by id needs no preparation: in Claude Code,
+      ;; background sessions are copies with their own ids, maybe busy.
+      (when (eq continue t)
+        (my/agent--before-continue dir))
+      (cond ((not continue) (ai-code-cli-start))
+            ((and args var (boundp var))
+             (cl-progv (list var) (list (append (symbol-value var) args))
+               (ai-code-cli-start)))
+            (t (ai-code-cli-resume))))))
 
 (defun my/agent--await (dirs)
   "Wait `my/agent-start-wait' seconds; return the DIRS left without an agent."
@@ -250,9 +350,8 @@ missing from `my/agent-continue-switches', show its resume picker instead."
 
 (defun my/agent--start-in (dir &optional resume)
   "Start an agent rooted at DIR.
-With RESUME, continue the most recent conversation in DIR, or start a new
-one when that fails."
-  (when resume (my/agent--stop-background dir))
+With RESUME, continue a conversation (see `my/agent--launch'), or start a
+new one when that fails."
   (my/agent--launch dir resume)
   (cond ((and resume (my/agent--await (list dir)))
          (my/agent--launch-fresh dir))
@@ -480,7 +579,7 @@ ai-code task file; describe the task there. The agent opens on the right."
         (find-file task)
       (dired path))
     (unless (my/agent--session-buffers path)
-      (my/agent--start-in path t))
+      (my/agent--start-in path (my/agent--conversation path)))
     (my/agent--show-panels)))
 
 (defun my/agent--stop (buffers)
@@ -498,18 +597,19 @@ dashboard."
 
 (defun my/agent-resume (&optional fresh)
   "Start the agent for the current workspace's checkout.
-One already running there is restarted, after asking. The conversation is
-continued; with prefix FRESH (\\[universal-argument]), a new one is started
-instead."
+One already running there is restarted, after asking. Its conversation is
+continued (else the workspace's last one); with prefix FRESH
+\(\\[universal-argument]), a new one is started instead."
   (interactive "P")
   (require 'ai-code)
   (let* ((dir (my/agent--current-dir))
-         (running (my/agent--session-buffers dir)))
+         (running (my/agent--session-buffers dir))
+         (conversation (unless fresh (my/agent--conversation dir))))
     (when running
       (unless (my/agent--yes-p (format "Restart the agent in %s?" dir))
         (user-error "Cancelled"))
       (my/agent--stop running))
-    (my/agent--start-in dir (not fresh))))
+    (my/agent--start-in dir conversation)))
 
 (defun my/agent-pick ()
   "Pick an earlier conversation for the current workspace's checkout.
@@ -524,7 +624,7 @@ Stops the agent running there first, after asking."
       (my/agent--stop running))
     ;; Picking a conversation that is still a background session makes
     ;; Claude Code exit, and the terminal closes.
-    (my/agent--stop-background dir)
+    (my/agent--before-continue dir)
     (with-current-buffer (dired-noselect dir)
       (ai-code-cli-resume))))
 
@@ -645,8 +745,7 @@ Runs after a session restore. The scratch workspace is skipped."
         (condition-case nil
             (progn
               (unless (my/agent--session-buffers dir)
-                (my/agent--stop-background dir)
-                (my/agent--launch dir t)
+                (my/agent--launch dir (my/agent--conversation dir name))
                 (push (cons name dir) started))
               (my/agent--show-panels))
           (error (push name skipped)))))
