@@ -25,11 +25,17 @@ The delay lets the dashboard draw first, so it doesn't cover the session."
 ;; dashboard, popups): putting those back fails once their buffers are gone,
 ;; and the whole layout is lost. agents.el redraws the panels instead.
 (defun my/session-window-state-get (&optional frame rwin)
-  "Window state of FRAME's main area, side windows left out."
-  (let ((window-persistent-parameters
-         (seq-remove (lambda (p) (memq (car p) '(window-side window-slot)))
-                     window-persistent-parameters)))
-    (window-state-get (or rwin (window-main-window (or frame (selected-frame)))) t)))
+  "Window state of FRAME's main area, side windows left out.
+A frame zoomed on a panel (SPC j z) has no main area: return the layout
+saved before, so the panel isn't saved as the file window."
+  (let* ((frame (or frame (selected-frame)))
+         (main (or rwin (window-main-window frame)))
+         (window-persistent-parameters
+          (seq-remove (lambda (p) (memq (car p) '(window-side window-slot)))
+                      window-persistent-parameters)))
+    (if (window-parameter main 'window-side)
+        (safe-persp-window-conf (get-frame-persp frame))
+      (window-state-get main t))))
 
 (defun my/session--side-window-in-state-p (state)
   "Non-nil if window STATE contains a side window (layouts saved before)."
