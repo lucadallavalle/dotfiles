@@ -18,8 +18,8 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 | `SPC j o` | Reopen an existing task worktree (workspace lost)             |
 | `SPC j g` | Magit for this task's worktree                                |
 | `SPC j e` | File tree (treemacs) for this task's worktree                 |
-| `SPC j l` | Restore the layout: agent, file tree, dashboard               |
-| `SPC j z` | Zoom the current window full frame; again to restore          |
+| `SPC j l` | Restore the layout: files, agent, file tree, dashboard        |
+| `SPC j z` | Zoom the current window full frame; again to restore. Ends when you leave the workspace |
 | `SPC j f` | Finish task (after merging): stop agent, remove worktree      |
 | `SPC j r` | Resume the agent here, or restart the running one (`SPC u SPC j r`: fresh conversation) |
 | `SPC j R` | Resume agents in all task workspaces                          |
@@ -39,6 +39,21 @@ Agents run through [ai-code](https://github.com/tninja/ai-code-interface.el); th
 - The task file is the prompt notebook: write under a heading, `C-c C-c` sends it to the task's agent. The real file is in the main checkout's `.ai.code.files/`, symlinked into the worktree, so it survives `SPC j f`.
 - `SPC j n`, `SPC j o`, `SPC j h` and the restore open the file tree on the checkout and the dashboard.
 - The dashboard refreshes every 10 seconds while visible. In it: `RET` jumps to the session's workspace, `g r` refreshes, `x` kills the session, `D` opens Magit, `q` hides it.
+
+## Layout
+
+Task and home workspaces keep one layout: files in the middle, agent on the right, file tree on the left, sessions dashboard at the bottom.
+
+The layout check runs on `SPC j l`, on each switch to such a workspace, and at the end of `SPC j n`, `SPC j o`, `SPC j h`, `SPC j R`, `SPC j f` and `RET` in the dashboard.
+
+| It finds                                         | It does                                                              |
+|--------------------------------------------------|----------------------------------------------------------------------|
+| The frame zoomed (`SPC j z`)                     | Leaves zoom                                                          |
+| A panel (agent, tree, dashboard) in a file window | Unlocks the window and shows its last file, else the checkout folder; logs `Layout repaired: …` in `*Messages*` |
+| Nothing but panels                               | Turns the selected one into the file window, then as above           |
+| A running agent, the tree or the dashboard not shown | Shows it in its panel                                            |
+
+It leaves alone: splits and extra file windows, any other buffer in a file window (Magit, Doom dashboard), a panel on the wrong side, stray frames and their `#1` workspaces, an agent that isn't running (`SPC j r`).
 
 ## A task, start to finish
 
@@ -89,6 +104,8 @@ Keys differ from stock Magit because of evil.
 - **`SPC TAB x` unbound.** Doom's "Kill session" deletes every workspace and agent in one key press.
 - **Agents resume after every session load** (`SPC q l` too), not only at daemon start.
 - **Layouts are saved without side windows**, and the panels are redrawn on each switch to a task or home workspace. Restoring side windows whose buffers are gone failed and lost the whole layout. Doom popups aren't saved either.
+- **One layout check** (`my/agent--ensure-layout`, see Layout), not one per command. It isn't run on every window change: it would fight Magit, zoom and deliberate splits. A repair is logged because it means something put a panel in a file window: a bug to find.
+- **Zoom ends when the workspace is left.** A workspace left while zoomed on a panel had that panel saved as its file window, locked to it; files then opened in a new frame.
 - **`SPC j f` recognises squash merges**, in the main checkout or its fetched upstream. PRs are squash-merged, so the branch's own commits never reach `main`.
 - **Folder trust**: Claude Code asks once per repo if the repo root is trusted, since worktrees live inside it.
 

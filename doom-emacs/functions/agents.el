@@ -368,10 +368,12 @@ new one when that fails."
 
 ;; Without this, opening a frame or switching workspace swaps the dashboard
 ;; for the Doom dashboard: its buffer belongs to no workspace, and its window
-;; accepts any buffer.
+;; accepts any buffer. Only its own panel is locked: a locked file window
+;; leaves files nowhere to open but a new frame.
 (defun my/agent-dashboard-dedicate-a (&rest _)
-  "Make the sessions dashboard's window show nothing but the dashboard."
-  (when-let* ((win (get-buffer-window ai-code-session-dashboard-buffer-name)))
+  "Make the sessions dashboard's panel show nothing but the dashboard."
+  (when-let* ((win (get-buffer-window ai-code-session-dashboard-buffer-name))
+              ((window-parameter win 'window-side)))
     (set-window-dedicated-p win t)))
 
 (advice-add 'ai-code-session-dashboard :after #'my/agent-dashboard-dedicate-a)
@@ -549,7 +551,7 @@ ai-code task file; describe the task there. The agent opens on the right."
           (find-file task))
       (dired path))
     (my/agent--start-in path)
-    (my/agent--show-panels)))
+    (my/agent--ensure-layout)))
 
 ;; A lost session file (e.g. after a Doom upgrade rebuilt .local) leaves task
 ;; worktrees on disk with no workspace. This brings one back.
@@ -580,7 +582,7 @@ ai-code task file; describe the task there. The agent opens on the right."
       (dired path))
     (unless (my/agent--session-buffers path)
       (my/agent--start-in path (my/agent--conversation path)))
-    (my/agent--show-panels)))
+    (my/agent--ensure-layout)))
 
 (defun my/agent--stop (buffers)
   "Kill the agent BUFFERS and wait until their processes are gone.
@@ -642,10 +644,52 @@ Unlike SPC o p, this never falls back to the main checkout."
   (with-current-buffer (dired-noselect (my/agent--current-dir))
     (treemacs-add-and-display-current-project-exclusively)))
 
-(defun my/agent--show-panels ()
-  "Show the task's agent, file tree and sessions dashboard, keeping focus."
+;; The one layout check, run wherever the layout may have changed: files in
+;; the middle, agent right, file tree left, sessions dashboard at the bottom.
+
+(defun my/agent--panel-buffer-p (buffer)
+  "Non-nil if BUFFER belongs in a panel: an agent, a file tree or the dashboard."
+  (or (buffer-local-value 'ai-code-backends-infra--session-prefix buffer)
+      (eq (buffer-local-value 'major-mode buffer) 'treemacs-mode)
+      (equal (buffer-name buffer) ai-code-session-dashboard-buffer-name)))
+
+(defun my/agent--free-file-windows ()
+  "Take the panels out of the selected frame's file windows; return their names.
+Each window shows the last file it showed instead, else the checkout."
+  (let ((windows (window-list nil 'nomini))
+        freed)
+    ;; Nothing but panels: the selected one becomes the file window.
+    (unless (seq-remove (lambda (win) (window-parameter win 'window-side)) windows)
+      (set-window-parameter (selected-window) 'window-side nil)
+      (set-window-parameter (selected-window) 'window-slot nil))
+    (dolist (win windows)
+      (let ((panel (window-buffer win)))
+        (when (and (not (window-parameter win 'window-side))
+                   (my/agent--panel-buffer-p panel))
+          (set-window-dedicated-p win nil)
+          (set-window-buffer
+           win
+           (or (seq-find (lambda (buf)
+                           (and (buffer-live-p buf)
+                                (not (my/agent--panel-buffer-p buf))))
+                         (mapcar #'car (window-prev-buffers win)))
+               (dired-noselect (or (my/agent--workspace-dir)
+                                   default-directory))))
+          (push (buffer-name panel) freed))))
+    freed))
+
+(defun my/agent--ensure-layout ()
+  "Bring the selected frame to the task layout, keeping focus.
+Leave zoom, give the file windows back to files, and show the task's
+agent, file tree and sessions dashboard in their panels."
+  (require 'ai-code-session)
+  (my/zoom--end)
   (save-selected-window
-    (with-demoted-errors "Agent panels: %S"
+    (with-demoted-errors "Agent layout: %S"
+      ;; Say so: something put a panel there, and that is a bug to find.
+      (when-let* ((freed (my/agent--free-file-windows)))
+        (message "Layout repaired: a file window showed %s"
+                 (string-join freed ", ")))
       (when-let* ((dir (my/agent--workspace-dir))
                   (agent (car (my/agent--session-buffers dir)))
                   ((not (get-buffer-window agent))))
@@ -670,34 +714,48 @@ Unlike SPC o p, this never falls back to the main checkout."
 
 ;; Saved layouts leave out side windows (see sessions.el), so redraw the
 ;; panels whenever a task or home workspace becomes current.
-(defun my/agent-show-panels-h (&optional type)
-  "Show the panels when switching to a workspace that has a checkout."
+(defun my/agent-ensure-layout-h (&optional type)
+  "Check the layout when switching to a workspace that has a checkout."
   (when (and (eq type 'frame) (my/agent--workspace-dir))
-    (my/agent--show-panels)))
+    (my/agent--ensure-layout)))
 
-(add-hook 'persp-activated-functions #'my/agent-show-panels-h 90)
+(add-hook 'persp-activated-functions #'my/agent-ensure-layout-h 90)
 
 (defun my/agent-layout ()
-  "Bring back this workspace's agent, file tree and dashboard windows."
+  "Bring back this workspace's layout: files, agent, file tree and dashboard."
   (interactive)
-  (my/agent--show-panels))
+  (my/agent--ensure-layout))
 
 (defvar my/zoom--saved nil
   "Alist of ((FRAME . WORKSPACE) . WINDOW-CONFIGURATION) for `my/zoom-toggle'.")
+
+(defun my/zoom--end ()
+  "Leave zoom in the selected frame's workspace; return non-nil if it was on."
+  (when-let* ((saved (assoc (cons (selected-frame) (+workspace-current-name))
+                            my/zoom--saved)))
+    (setq my/zoom--saved (delq saved my/zoom--saved))
+    (set-window-configuration (cdr saved))
+    t))
 
 (defun my/zoom-toggle ()
   "Show only the current window, full frame; run again to restore the layout.
 Unlike SPC w m m, this also works from side windows such as the agent."
   (interactive)
-  (let* ((key (cons (selected-frame) (+workspace-current-name)))
-         (saved (assoc key my/zoom--saved)))
-    (if saved
-        (progn
-          (setq my/zoom--saved (delq saved my/zoom--saved))
-          (set-window-configuration (cdr saved)))
-      (push (cons key (current-window-configuration)) my/zoom--saved)
-      (let ((ignore-window-parameters t))
-        (delete-other-windows)))))
+  (unless (my/zoom--end)
+    (push (cons (cons (selected-frame) (+workspace-current-name))
+                (current-window-configuration))
+          my/zoom--saved)
+    (let ((ignore-window-parameters t))
+      (delete-other-windows))))
+
+;; A workspace left while zoomed on a panel had that panel saved as its file
+;; window, locked to it: back there, files opened in a new frame.
+(defun my/zoom-end-h (&optional type)
+  "Leave zoom before the selected frame's workspace is switched away from."
+  (when (eq type 'frame)
+    (my/zoom--end)))
+
+(add-hook 'persp-before-deactivate-functions #'my/zoom-end-h)
 
 (defun my/agent--workspace-for (dir)
   "Return the name of the workspace whose checkout is DIR, or nil."
@@ -714,7 +772,7 @@ Call FN with ARGS when the session has no workspace."
             (name (my/agent--workspace-for root)))
       (progn
         (+workspace-switch name)
-        (my/agent--show-panels)
+        (my/agent--ensure-layout)
         (when-let* ((win (get-buffer-window (ai-code-session-buffer session))))
           (select-window win)))
     (apply fn args)))
@@ -747,7 +805,7 @@ Runs after a session restore. The scratch workspace is skipped."
               (unless (my/agent--session-buffers dir)
                 (my/agent--launch dir (my/agent--conversation dir name))
                 (push (cons name dir) started))
-              (my/agent--show-panels))
+              (my/agent--ensure-layout))
           (error (push name skipped)))))
     ;; One wait for all of them, then a new conversation wherever continuing
     ;; failed.
@@ -756,7 +814,7 @@ Runs after a session restore. The scratch workspace is skipped."
         (+workspace-switch name)
         (condition-case nil
             (progn (my/agent--launch-fresh dir)
-                   (my/agent--show-panels))
+                   (my/agent--ensure-layout))
           (error (push name skipped)
                  (setq started (rassq-delete-all dir started))))))
     (+workspace-switch origin)
@@ -790,7 +848,7 @@ Ask with `q' in the ai-code menu, or use plan mode, so it doesn't edit main."
         (delete-other-windows)
         (dired root))
       (my/agent--start-in root))
-    (my/agent--show-panels)))
+    (my/agent--ensure-layout)))
 
 (defun my/agent-scratch ()
   "Jump to the scratch workspace, starting its agent if needed."
@@ -817,7 +875,7 @@ dashboard window."
       (+workspace-kill name)
       (+workspace-switch next)
       (when (my/agent--workspace-dir)
-        (my/agent--show-panels)))))
+        (my/agent--ensure-layout)))))
 
 (defun my/agent--yes-p (prompt)
   "Ask PROMPT, yes by default: RET or y is yes, n is no."
