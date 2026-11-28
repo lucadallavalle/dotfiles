@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# caffeine [duration] - block automatic sleep for the duration (default 2h).
+# Running it again while active turns it off.
+# kde-inhibit, not systemd-inhibit: a logind block lock also refuses manual suspend.
+set -euo pipefail
+
+unit=caffeine.service
+
+if systemctl --user --quiet is-active "$unit"; then
+  exec systemctl --user stop "$unit"
+fi
+
+dur="${1:-2h}"
+if [[ ! $dur =~ ^[0-9]+(\.[0-9]+)?[smhd]?$ ]]; then
+  echo "usage: caffeine [duration]   e.g. 45m, 2h, 90 (seconds)" >&2
+  exit 2
+fi
+
+systemd-run --user --quiet --collect --unit="$unit" \
+  --description="Keep awake for $dur" \
+  --property=Type=exec \
+  --property='ExecStopPost=-notify-send -i weather-clear-night "Caffeine off" "Sleep allowed again"' \
+  kde-inhibit --power sleep "$dur"
+notify-send -i weather-clear-day "Caffeine on" "Staying awake for $dur"

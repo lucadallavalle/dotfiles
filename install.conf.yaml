@@ -24,6 +24,7 @@
     ~/.config/nvim: nvim
     # Desktop
     ~/.config/plasma-workspace: plasma-workspace
+    ~/.local/bin/caffeine: bin/caffeine
 
     ~/.config/topgrade.toml: topgrade.toml
     ~/.config/topgrade.d/remotes.toml: topgrade.d/remotes.toml

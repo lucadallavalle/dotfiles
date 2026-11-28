@@ -32,6 +32,7 @@ On a server, clone over HTTPS and run `DOTFILES_CONFIG=install.server.conf.yaml 
 | `topgrade.toml`                | `~/.config/topgrade.toml`      | System-wide updates with topgrade                             |
 | `topgrade.d/remotes.toml`      | `~/.config/topgrade.d/…`       | Servers topgrade also upgrades over SSH (not linked on servers) |
 | `plasma-workspace/`            | `~/.config/plasma-workspace`   | KDE Plasma session environment                                |
+| `bin/caffeine`                 | `~/.local/bin/caffeine`        | `caffeine [duration]`: no automatic sleep for a while; again to stop |
 
 ## Prerequisites
 
